@@ -1,39 +1,36 @@
-# JUHD Admin
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Web-based admin dashboard for the JUHD fitness app.
+## Getting Started
 
-## Setup
+First, run the development server:
 
-1. **Copy environment variables:**
-   ```bash
-   cp .env.local.example .env.local
-   ```
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-2. **Edit `.env.local`** and add your Supabase credentials (same as your FitLog app):
-   - `NEXT_PUBLIC_SUPABASE_URL` — from SupabaseConfig.xcconfig or Supabase dashboard
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` — your anon/public key
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-3. **Install and run:**
-   ```bash
-   npm install
-   npm run dev
-   ```
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-4. Open [http://localhost:3000](http://localhost:3000) — you'll be redirected to `/admin` → `/admin/login`.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-5. **Log in** with an admin account (your JUHD user with `role = 'admin'` in the `users` table).
+## Learn More
 
-## Deploy to Vercel
+To learn more about Next.js, take a look at the following resources:
 
-1. Push this folder to GitHub.
-2. Go to [vercel.com](https://vercel.com) → New Project → Import your repo.
-3. Add environment variables:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-4. Deploy. Optionally add a custom domain (e.g. `admin.juhd.app`).
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-## Structure
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-- `/admin` — redirects to login or dashboard
-- `/admin/login` — sign in (admin only)
-- `/admin/dashboard` — main dashboard (protected)
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
