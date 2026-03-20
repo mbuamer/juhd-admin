@@ -68,6 +68,7 @@ export default function AdminLayout({
           <NavLink href="/admin/dashboard" icon="📊" label="Dashboard" active={pathname === "/admin/dashboard"} />
           <NavLink href="/admin/users" icon="👥" label="Users" active={pathname === "/admin/users"} />
           <NavLink href="/admin/analytics" icon="📈" label="Analytics" active={pathname === "/admin/analytics"} />
+          <NavLink href="/admin/insights" icon="📋" label="Insights" active={pathname === "/admin/insights"} />
           <NavLink href="/admin/notifications" icon="📢" label="Notifications" active={pathname === "/admin/notifications"} />
           <NavLink href="/admin/reports" icon="🚩" label="Reports" active={pathname === "/admin/reports"} />
           <NavLink href="/admin/bug-reports" icon="🐛" label="Bug Reports" active={pathname === "/admin/bug-reports"} />

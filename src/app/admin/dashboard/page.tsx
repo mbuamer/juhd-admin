@@ -201,6 +201,7 @@ export default function DashboardPage() {
         <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden">
           <QuickLink icon="📢" title="Broadcast Notifications" href="/admin/notifications" />
           <QuickLink icon="👥" title="User Management" href="/admin/users" />
+          <QuickLink icon="📋" title="Insights" href="/admin/insights" />
           <QuickLink icon="📊" title="Analytics" href="/admin/analytics" />
           <QuickLink icon="🐛" title="Bug Reports" href="/admin/bug-reports" />
           <QuickLink icon="⚠️" title="Error Logs" href="/admin/error-logs" />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 
 type User = {
@@ -19,6 +20,7 @@ export default function UsersPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [banModal, setBanModal] = useState<User | null>(null);
+  const [viewUser, setViewUser] = useState<User | null>(null);
   const [updating, setUpdating] = useState(false);
 
   async function load() {
@@ -175,22 +177,30 @@ export default function UsersPage() {
                       {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                     </td>
                     <td className="p-4 text-right">
-                      {isBanned(u) ? (
+                      <div className="flex items-center justify-end gap-3">
                         <button
-                          onClick={() => unbanUser(u.id)}
-                          disabled={updating}
-                          className="text-sm text-green-600 dark:text-green-400 hover:underline"
+                          onClick={() => setViewUser(u)}
+                          className="text-sm text-zinc-600 dark:text-zinc-400 hover:underline"
                         >
-                          Unban
+                          View
                         </button>
-                      ) : (
-                        <button
-                          onClick={() => setBanModal(u)}
-                          className="text-sm text-red-600 dark:text-red-400 hover:underline"
-                        >
-                          Ban
-                        </button>
-                      )}
+                        {isBanned(u) ? (
+                          <button
+                            onClick={() => unbanUser(u.id)}
+                            disabled={updating}
+                            className="text-sm text-green-600 dark:text-green-400 hover:underline"
+                          >
+                            Unban
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => setBanModal(u)}
+                            className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                          >
+                            Ban
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -200,6 +210,67 @@ export default function UsersPage() {
           <p className="p-4 text-sm text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700">
             {filtered.length} users
           </p>
+        </div>
+      )}
+
+      {viewUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-zinc-800 rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">View as user: {viewUser.username}</h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
+              Use this data for debugging or to send a single-user push notification.
+            </p>
+            <div className="space-y-2 text-sm font-mono">
+              <div className="flex justify-between gap-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-zinc-500">ID</span>
+                <span className="text-zinc-900 dark:text-white break-all text-right">{viewUser.id}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-zinc-500">Username</span>
+                <span className="text-zinc-900 dark:text-white">{viewUser.username}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-zinc-500">Email</span>
+                <span className="text-zinc-900 dark:text-white break-all text-right">{viewUser.email}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-zinc-500">Role</span>
+                <span className="text-zinc-900 dark:text-white">{viewUser.role}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2 border-b border-zinc-100 dark:border-zinc-700">
+                <span className="text-zinc-500">City</span>
+                <span className="text-zinc-900 dark:text-white">{viewUser.city ?? "—"}</span>
+              </div>
+              <div className="flex justify-between gap-4 py-2">
+                <span className="text-zinc-500">Joined</span>
+                <span className="text-zinc-900 dark:text-white">
+                  {viewUser.created_at ? new Date(viewUser.created_at).toLocaleString() : "—"}
+                </span>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(viewUser.id);
+                }}
+                className="flex-1 py-2 rounded-lg bg-zinc-600 hover:bg-zinc-700 text-white text-sm"
+              >
+                Copy user ID
+              </button>
+              <Link
+                href={`/admin/notifications?single=${viewUser.id}`}
+                className="flex-1 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 text-center text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700"
+              >
+                Send push
+              </Link>
+              <button
+                onClick={() => setViewUser(null)}
+                className="px-4 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
