@@ -70,7 +70,7 @@ export default function AdminLoginPage() {
       <div className="w-full max-w-sm">
         <div className="bg-white dark:bg-zinc-800 rounded-2xl shadow-lg p-8">
           <h1 className="text-2xl font-bold text-center text-zinc-900 dark:text-white mb-2">
-            JUHD Admin
+            JUHD Dash
           </h1>
           <p className="text-center text-zinc-500 dark:text-zinc-400 text-sm mb-6">
             Sign in with your admin account

@@ -1,4 +1,4 @@
-# Deploy JUHD Admin to Vercel
+# Deploy JUHD Dash (juhd-admin) to Vercel
 
 ## Step 1: Push to GitHub
 

@@ -129,19 +129,28 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6 max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
           Dashboard
         </h1>
-        <button
-          onClick={() => {
-            setLoading(true);
-            load().finally(() => setLoading(false));
-          }}
-          className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-        >
-          Refresh
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/admin/analytics-dashboard"
+            className="rounded-lg border border-red-600/50 bg-red-600/10 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 transition-all hover:border-red-500 hover:bg-red-600/20"
+          >
+            Growth analytics →
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              load().finally(() => setLoading(false));
+            }}
+            className="rounded-lg px-3 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (

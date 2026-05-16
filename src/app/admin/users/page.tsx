@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 
@@ -14,45 +14,102 @@ type User = {
   banned_until: string | null;
 };
 
+const USER_COLUMNS = "id, username, email, role, city, created_at, banned_until";
+const PAGE_SIZE = 50;
+const SEARCH_LIMIT = 100;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function escapeIlike(term: string): string {
+  return term.replace(/[%_\\]/g, (c) => `\\${c}`);
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [totalUsers, setTotalUsers] = useState<number | null>(null);
+  const [searchMode, setSearchMode] = useState(false);
   const [banModal, setBanModal] = useState<User | null>(null);
   const [viewUser, setViewUser] = useState<User | null>(null);
   const [updating, setUpdating] = useState(false);
 
-  async function load() {
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const fetchBrowse = useCallback(async (pageIndex: number) => {
+    const supabase = createClient();
+    const from = pageIndex * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const [{ data, error: err }, { count, error: countErr }] = await Promise.all([
+      supabase
+        .from("users")
+        .select(USER_COLUMNS)
+        .order("created_at", { ascending: false })
+        .range(from, to),
+      supabase.from("users").select("*", { count: "exact", head: true }),
+    ]);
+
+    if (err) throw err;
+    if (!countErr && count != null) setTotalUsers(count);
+    setUsers((data as User[]) ?? []);
+    setSearchMode(false);
+  }, []);
+
+  const fetchSearch = useCallback(async (query: string) => {
+    const supabase = createClient();
+    const q = query.trim();
+
+    if (q.length < 2) {
+      await fetchBrowse(0);
+      setPage(0);
+      return;
+    }
+
+    let request = supabase.from("users").select(USER_COLUMNS).order("created_at", { ascending: false }).limit(SEARCH_LIMIT);
+
+    if (UUID_RE.test(q)) {
+      request = request.eq("id", q);
+    } else {
+      const pattern = `%${escapeIlike(q)}%`;
+      request = request.or(`username.ilike.${pattern},email.ilike.${pattern}`);
+    }
+
+    const { data, error: err } = await request;
+    if (err) throw err;
+    setUsers((data as User[]) ?? []);
+    setSearchMode(true);
+  }, [fetchBrowse]);
+
+  const reload = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const supabase = createClient();
-      const { data, error: err } = await supabase
-        .from("users")
-        .select("id, username, email, role, city, created_at, banned_until")
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (err) throw err;
-      setUsers((data as User[]) ?? []);
+      if (debouncedSearch.length >= 2) {
+        await fetchSearch(debouncedSearch);
+      } else {
+        await fetchBrowse(page);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }
+  }, [debouncedSearch, fetchBrowse, fetchSearch, page]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void reload();
+  }, [reload]);
 
-  const filtered = search.trim()
-    ? users.filter(
-        (u) =>
-          u.username.toLowerCase().includes(search.toLowerCase()) ||
-          u.email.toLowerCase().includes(search.toLowerCase())
-      )
-    : users;
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch]);
 
   function isBanned(u: User): boolean {
     if (!u.banned_until) return false;
@@ -65,7 +122,7 @@ export default function UsersPage() {
       const supabase = createClient();
       const { error: err } = await supabase.from("users").update({ role }).eq("id", userId);
       if (err) throw err;
-      await load();
+      await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update");
     } finally {
@@ -77,10 +134,16 @@ export default function UsersPage() {
     setUpdating(true);
     try {
       const supabase = createClient();
-      const until = days >= 9999 ? new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000) : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-      const { error: err } = await supabase.from("users").update({ banned_until: until.toISOString() }).eq("id", userId);
+      const until =
+        days >= 9999
+          ? new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000)
+          : new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+      const { error: err } = await supabase
+        .from("users")
+        .update({ banned_until: until.toISOString() })
+        .eq("id", userId);
       if (err) throw err;
-      await load();
+      await reload();
       setBanModal(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to ban");
@@ -95,7 +158,7 @@ export default function UsersPage() {
       const supabase = createClient();
       const { error: err } = await supabase.from("users").update({ banned_until: null }).eq("id", userId);
       if (err) throw err;
-      await load();
+      await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to unban");
     } finally {
@@ -105,30 +168,51 @@ export default function UsersPage() {
 
   function roleColor(role: string): string {
     switch (role.toLowerCase()) {
-      case "admin": return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
+      case "admin":
+        return "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400";
       case "premium":
-      case "pro": return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400";
-      default: return "bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400";
+      case "pro":
+        return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400";
+      default:
+        return "bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400";
     }
   }
 
+  const totalPages =
+    totalUsers != null && !searchMode ? Math.max(1, Math.ceil(totalUsers / PAGE_SIZE)) : 1;
+  const canPrev = !searchMode && page > 0;
+  const canNext = !searchMode && page + 1 < totalPages;
+
   return (
     <div className="p-6 max-w-5xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">User Management</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <input
             type="search"
-            placeholder="Search by username or email"
+            placeholder="Search all users (username, email, or ID)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white w-64"
+            className="px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white w-72 min-w-[16rem]"
           />
-          <button onClick={load} className="px-3 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600">
+          <button
+            onClick={() => void reload()}
+            className="px-3 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600"
+          >
             Refresh
           </button>
         </div>
       </div>
+
+      <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+        {searchMode
+          ? debouncedSearch.length >= 2
+            ? `Search results across all users (up to ${SEARCH_LIMIT}).`
+            : null
+          : totalUsers != null
+            ? `Browsing newest users — page ${page + 1} of ${totalPages} (${totalUsers.toLocaleString()} total). Type 2+ characters to search everyone.`
+            : "Browsing newest users. Type 2+ characters to search everyone."}
+      </p>
 
       {error && <p className="text-red-600 dark:text-red-400 mb-4 text-sm">{error}</p>}
 
@@ -147,76 +231,113 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((u) => (
-                  <tr key={u.id} className="border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-700/30">
-                    <td className="p-4">
-                      <div>
-                        <p className="font-medium text-zinc-900 dark:text-white">{u.username}</p>
-                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{u.email}</p>
-                        {isBanned(u) && (
-                          <span className="text-xs text-red-600 dark:text-red-400">Banned</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <select
-                        value={u.role}
-                        onChange={(e) => updateRole(u.id, e.target.value)}
-                        disabled={updating}
-                        className={`px-2 py-1 rounded text-sm ${roleColor(u.role)} border-0 cursor-pointer`}
-                      >
-                        <option value="user">user</option>
-                        <option value="regular">regular</option>
-                        <option value="premium">premium</option>
-                        <option value="admin">admin</option>
-                        <option value="trainer">trainer</option>
-                        <option value="pro">pro</option>
-                      </select>
-                    </td>
-                    <td className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="p-4 text-right">
-                      <div className="flex items-center justify-end gap-3">
-                        <button
-                          onClick={() => setViewUser(u)}
-                          className="text-sm text-zinc-600 dark:text-zinc-400 hover:underline"
-                        >
-                          View
-                        </button>
-                        {isBanned(u) ? (
-                          <button
-                            onClick={() => unbanUser(u.id)}
-                            disabled={updating}
-                            className="text-sm text-green-600 dark:text-green-400 hover:underline"
-                          >
-                            Unban
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => setBanModal(u)}
-                            className="text-sm text-red-600 dark:text-red-400 hover:underline"
-                          >
-                            Ban
-                          </button>
-                        )}
-                      </div>
+                {users.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                      {searchMode ? "No users match your search." : "No users found."}
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  users.map((u) => (
+                    <tr
+                      key={u.id}
+                      className="border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-700/30"
+                    >
+                      <td className="p-4">
+                        <div>
+                          <p className="font-medium text-zinc-900 dark:text-white">{u.username}</p>
+                          <p className="text-sm text-zinc-500 dark:text-zinc-400">{u.email}</p>
+                          {isBanned(u) && (
+                            <span className="text-xs text-red-600 dark:text-red-400">Banned</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <select
+                          value={u.role}
+                          onChange={(e) => updateRole(u.id, e.target.value)}
+                          disabled={updating}
+                          className={`px-2 py-1 rounded text-sm ${roleColor(u.role)} border-0 cursor-pointer`}
+                        >
+                          <option value="user">user</option>
+                          <option value="regular">regular</option>
+                          <option value="premium">premium</option>
+                          <option value="admin">admin</option>
+                          <option value="trainer">trainer</option>
+                          <option value="pro">pro</option>
+                        </select>
+                      </td>
+                      <td className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
+                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="p-4 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            onClick={() => setViewUser(u)}
+                            className="text-sm text-zinc-600 dark:text-zinc-400 hover:underline"
+                          >
+                            View
+                          </button>
+                          {isBanned(u) ? (
+                            <button
+                              onClick={() => unbanUser(u.id)}
+                              disabled={updating}
+                              className="text-sm text-green-600 dark:text-green-400 hover:underline"
+                            >
+                              Unban
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setBanModal(u)}
+                              className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                            >
+                              Ban
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
-          <p className="p-4 text-sm text-zinc-500 dark:text-zinc-400 border-t border-zinc-200 dark:border-zinc-700">
-            {filtered.length} users
-          </p>
+          <div className="p-4 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 dark:border-zinc-700">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {searchMode
+                ? `${users.length} match${users.length === 1 ? "" : "es"}`
+                : `${users.length} on this page`}
+            </p>
+            {!searchMode && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!canPrev || loading}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-zinc-300 dark:border-zinc-600 disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={!canNext || loading}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="px-3 py-1.5 rounded-lg text-sm border border-zinc-300 dark:border-zinc-600 disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
       {viewUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-zinc-800 rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">View as user: {viewUser.username}</h3>
+            <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-4">
+              View as user: {viewUser.username}
+            </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-4">
               Use this data for debugging or to send a single-user push notification.
             </p>

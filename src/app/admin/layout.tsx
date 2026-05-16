@@ -61,11 +61,17 @@ export default function AdminLayout({
       <aside className="w-56 bg-zinc-900 text-white flex flex-col shrink-0">
         <div className="p-4 border-b border-zinc-700">
           <Link href="/admin/dashboard" className="font-bold text-lg">
-            JUHD Admin
+            JUHD Dash
           </Link>
         </div>
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           <NavLink href="/admin/dashboard" icon="📊" label="Dashboard" active={pathname === "/admin/dashboard"} />
+          <NavLink
+            href="/admin/analytics-dashboard"
+            icon="📈"
+            label="Growth analytics"
+            active={pathname === "/admin/analytics-dashboard"}
+          />
           <NavLink href="/admin/users" icon="👥" label="Users" active={pathname === "/admin/users"} />
           <NavLink href="/admin/analytics" icon="📈" label="Analytics" active={pathname === "/admin/analytics"} />
           <NavLink href="/admin/insights" icon="📋" label="Insights" active={pathname === "/admin/insights"} />
