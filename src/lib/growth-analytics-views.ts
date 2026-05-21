@@ -4,8 +4,8 @@ import type { GrowthNumericSnapshot } from "@/lib/growth-numeric-snapshot";
 import type { OpsPulse } from "@/lib/growth-analytics-fetch";
 import { missingProfileStats, type MissingProfileStats } from "@/lib/growth-analytics-math";
 
-/** Period filter for the Period Analytics panel only (not all-time). */
-export type PeriodFilterDays = 1 | 7 | 30;
+/** Period filter for the Period Analytics panel: weekly / monthly / yearly. */
+export type PeriodFilterDays = 7 | 30 | 365;
 
 export interface DailySnapshot {
   activeUsers: number;

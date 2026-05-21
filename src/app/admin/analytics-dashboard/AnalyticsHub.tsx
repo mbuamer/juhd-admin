@@ -14,6 +14,7 @@ import {
 } from "@/lib/analytics-hub-data";
 import { fetchAnalyticsHubExtras, type HubWindowDays } from "@/lib/analytics-hub-rpc";
 import { hubWindowLabel, periodLabel } from "@/lib/growth-analytics-math";
+import { ChartsHubSection } from "./ChartsHubSection";
 import { TargetingSummaryCard, DebugPanel } from "./growth-analytics-cards";
 import {
   AnalyticsTabs,
@@ -140,6 +141,16 @@ export function AnalyticsHub({
               ))}
             </div>
           </section>
+        )}
+
+        {tab === "charts" && (
+          <ChartsHubSection
+            bundle={bundle}
+            period={period}
+            onPeriodChange={onPeriodChange}
+            periodLoading={periodLoading}
+            refreshCount={refreshCount}
+          />
         )}
 
         {tab === "period" && (

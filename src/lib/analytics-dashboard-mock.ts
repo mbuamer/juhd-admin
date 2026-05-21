@@ -4,7 +4,7 @@
  */
 
 /** `0` in RPC / JSON = all time (same as `"all"` in the app). */
-export type TimePeriod = 1 | 7 | 30 | "all";
+export type TimePeriod = 1 | 7 | 30 | 365 | "all";
 
 /** Top cities shown on growth dashboard (SQL + charts). */
 export const GROWTH_TOP_CITIES_LIMIT = 10;
@@ -56,6 +56,8 @@ export function growthBucketCount(period: TimePeriod): number {
     case 7:
       return 7;
     case 30:
+      return 30;
+    case 365:
     case "all":
       return 12;
     default:
@@ -114,6 +116,13 @@ function timeBucketLabel(period: TimePeriod, i: number): string {
   if (period === 7) {
     const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
     return days[i] ?? `D${i + 1}`;
+  }
+  if (period === 30) {
+    return `D${i + 1}`;
+  }
+  if (period === 365) {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return months[i] ?? `M${i + 1}`;
   }
   if (period === "all") {
     return `B${i + 1}`;

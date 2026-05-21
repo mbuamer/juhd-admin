@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LabeledCount } from "@/lib/analytics-dashboard-mock";
+import type { ChartsInsights } from "@/lib/charts-hub-data";
+import type { PeriodFilterDays } from "@/lib/growth-analytics-views";
 import { rpcFirstRow } from "@/lib/rpc-row";
 /** RPC window: 0 = all time, 1/7/30 = UTC day windows (matches `_admin_period_start`). */
-export type HubWindowDays = 0 | 1 | 7 | 30;
+export type HubWindowDays = 0 | 1 | 7 | 30 | 365;
 
 function toInt(v: unknown): number {
   if (typeof v === "number" && Number.isFinite(v)) return Math.trunc(v);
@@ -219,4 +221,41 @@ export async function fetchAnalyticsHubExtras(
     breakdowns,
     fetchErrors,
   };
+}
+
+export async function fetchChartsInsights(
+  supabase: SupabaseClient,
+  period: PeriodFilterDays
+): Promise<ChartsInsights> {
+  const fetchErrors: string[] = [];
+  let goals: LabeledCount[] = [];
+  let activeHour: LabeledCount[] = [];
+  let activeWeekday: LabeledCount[] = [];
+
+  const [goalsRes, activityRes] = await Promise.all([
+    supabase.rpc("get_admin_goal_distribution"),
+    supabase.rpc("get_admin_activity_patterns", { p_period_days: period }),
+  ]);
+
+  if (goalsRes.error) fetchErrors.push(`goals: ${goalsRes.error.message}`);
+  else goals = parseBreakdownJson(goalsRes.data);
+
+  if (activityRes.error) fetchErrors.push(`activity_patterns: ${activityRes.error.message}`);
+  else {
+    let raw: unknown = activityRes.data;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        raw = null;
+      }
+    }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const o = raw as Record<string, unknown>;
+      activeHour = parseBreakdownJson(o.byHour ?? o.by_hour);
+      activeWeekday = parseBreakdownJson(o.byWeekday ?? o.by_weekday);
+    }
+  }
+
+  return { goals, activeHour, activeWeekday, fetchErrors };
 }

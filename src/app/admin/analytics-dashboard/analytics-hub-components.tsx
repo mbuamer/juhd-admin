@@ -10,6 +10,7 @@ import { SectionHeader, EmptyStatePanel, ChartPanel } from "./growth-analytics-c
 const TABS: { id: HubTabId; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "period", label: "Period Summary" },
+  { id: "charts", label: "Charts" },
   { id: "tables", label: "Tables" },
   { id: "alltime", label: "All-Time" },
   { id: "ratios", label: "Ratios" },
@@ -220,9 +221,9 @@ export function PeriodFilterBar({
         { d: 0, label: "All Time" },
       ]
     : [
-        { d: 1, label: "1 Day" },
-        { d: 7, label: "7 Days" },
-        { d: 30, label: "30 Days" },
+        { d: 7, label: "Weekly" },
+        { d: 30, label: "Monthly" },
+        { d: 365, label: "Yearly" },
       ];
   return (
     <div className="mb-6 flex flex-wrap items-center justify-between gap-3">

@@ -24,12 +24,42 @@ function escapeIlike(term: string): string {
   return term.replace(/[%_\\]/g, (c) => `\\${c}`);
 }
 
+/** Role filter values; matched case-insensitively against `users.role`. */
+export type RoleFilter =
+  | "all"
+  | "regular"
+  | "test"
+  | "premium"
+  | "admin"
+  | "trainer"
+  | "pro"
+  | "user";
+
+const ROLE_FILTERS: { id: RoleFilter; label: string; pillClass: string }[] = [
+  { id: "all", label: "All", pillClass: "border-zinc-400 text-zinc-700 dark:text-zinc-200" },
+  { id: "test", label: "Test (QA)", pillClass: "border-violet-500 text-violet-700 dark:text-violet-300" },
+  { id: "regular", label: "Regular", pillClass: "border-zinc-500 text-zinc-600 dark:text-zinc-300" },
+  { id: "premium", label: "Premium", pillClass: "border-amber-500 text-amber-700 dark:text-amber-300" },
+  { id: "admin", label: "Admin", pillClass: "border-red-500 text-red-700 dark:text-red-300" },
+  { id: "trainer", label: "Trainer", pillClass: "border-orange-500 text-orange-700 dark:text-orange-300" },
+  { id: "pro", label: "Pro", pillClass: "border-amber-600 text-amber-800 dark:text-amber-200" },
+  { id: "user", label: "User", pillClass: "border-zinc-500 text-zinc-600 dark:text-zinc-300" },
+];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyRoleFilter(query: any, roleFilter: RoleFilter) {
+  if (roleFilter === "all") return query;
+  return query.ilike("role", roleFilter);
+}
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [roleCounts, setRoleCounts] = useState<Partial<Record<RoleFilter, number>>>({});
   const [page, setPage] = useState(0);
   const [totalUsers, setTotalUsers] = useState<number | null>(null);
   const [searchMode, setSearchMode] = useState(false);
@@ -42,37 +72,65 @@ export default function UsersPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const fetchBrowse = useCallback(async (pageIndex: number) => {
+  const fetchRoleCounts = useCallback(async () => {
     const supabase = createClient();
-    const from = pageIndex * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
+    const filters: RoleFilter[] = ["all", "test", "regular", "premium", "admin"];
+    const results = await Promise.all(
+      filters.map(async (f) => {
+        let q = supabase.from("users").select("*", { count: "exact", head: true });
+        q = applyRoleFilter(q, f);
+        const { count, error: err } = await q;
+        if (err) return [f, null] as const;
+        return [f, count ?? 0] as const;
+      })
+    );
+    const next: Partial<Record<RoleFilter, number>> = {};
+    for (const [f, n] of results) {
+      if (n != null) next[f] = n;
+    }
+    setRoleCounts(next);
+  }, []);
 
-    const [{ data, error: err }, { count, error: countErr }] = await Promise.all([
-      supabase
+  const fetchBrowse = useCallback(
+    async (pageIndex: number, filter: RoleFilter) => {
+      const supabase = createClient();
+      const from = pageIndex * PAGE_SIZE;
+      const to = from + PAGE_SIZE - 1;
+
+      let listQuery = supabase
         .from("users")
         .select(USER_COLUMNS)
         .order("created_at", { ascending: false })
-        .range(from, to),
-      supabase.from("users").select("*", { count: "exact", head: true }),
-    ]);
+        .range(from, to);
+      listQuery = applyRoleFilter(listQuery, filter);
 
-    if (err) throw err;
-    if (!countErr && count != null) setTotalUsers(count);
-    setUsers((data as User[]) ?? []);
-    setSearchMode(false);
-  }, []);
+      let countQuery = supabase.from("users").select("*", { count: "exact", head: true });
+      countQuery = applyRoleFilter(countQuery, filter);
 
-  const fetchSearch = useCallback(async (query: string) => {
+      const [{ data, error: err }, { count, error: countErr }] = await Promise.all([listQuery, countQuery]);
+
+      if (err) throw err;
+      if (!countErr && count != null) setTotalUsers(count);
+      setUsers((data as User[]) ?? []);
+      setSearchMode(false);
+    },
+    []
+  );
+
+  const fetchSearch = useCallback(async (query: string, filter: RoleFilter) => {
     const supabase = createClient();
     const q = query.trim();
 
     if (q.length < 2) {
-      await fetchBrowse(0);
-      setPage(0);
       return;
     }
 
-    let request = supabase.from("users").select(USER_COLUMNS).order("created_at", { ascending: false }).limit(SEARCH_LIMIT);
+    let request = supabase
+      .from("users")
+      .select(USER_COLUMNS)
+      .order("created_at", { ascending: false })
+      .limit(SEARCH_LIMIT);
+    request = applyRoleFilter(request, filter);
 
     if (UUID_RE.test(q)) {
       request = request.eq("id", q);
@@ -85,31 +143,35 @@ export default function UsersPage() {
     if (err) throw err;
     setUsers((data as User[]) ?? []);
     setSearchMode(true);
-  }, [fetchBrowse]);
+  }, []);
 
   const reload = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       if (debouncedSearch.length >= 2) {
-        await fetchSearch(debouncedSearch);
+        await fetchSearch(debouncedSearch, roleFilter);
       } else {
-        await fetchBrowse(page);
+        await fetchBrowse(page, roleFilter);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, fetchBrowse, fetchSearch, page]);
+  }, [debouncedSearch, fetchBrowse, fetchSearch, page, roleFilter]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
   useEffect(() => {
+    void fetchRoleCounts();
+  }, [fetchRoleCounts, updating]);
+
+  useEffect(() => {
     setPage(0);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, roleFilter]);
 
   function isBanned(u: User): boolean {
     if (!u.banned_until) return false;
@@ -173,10 +235,24 @@ export default function UsersPage() {
       case "premium":
       case "pro":
         return "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400";
+      case "test":
+        return "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400";
+      case "trainer":
+        return "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400";
       default:
         return "bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400";
     }
   }
+
+  const ROLE_OPTIONS = [
+    { value: "user", label: "user" },
+    { value: "regular", label: "regular" },
+    { value: "premium", label: "premium" },
+    { value: "trainer", label: "trainer" },
+    { value: "pro", label: "pro" },
+    { value: "test", label: "test" },
+    { value: "admin", label: "admin" },
+  ] as const;
 
   const totalPages =
     totalUsers != null && !searchMode ? Math.max(1, Math.ceil(totalUsers / PAGE_SIZE)) : 1;
@@ -204,15 +280,86 @@ export default function UsersPage() {
         </div>
       </div>
 
+      <div className="mb-4">
+        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2 uppercase tracking-wide">
+          Filter by role
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {ROLE_FILTERS.map((f) => {
+            const active = roleFilter === f.id;
+            const count = roleCounts[f.id];
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setRoleFilter(f.id)}
+                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                  f.pillClass
+                } ${
+                  active
+                    ? "bg-white/90 dark:bg-zinc-700 ring-2 ring-offset-1 ring-offset-zinc-100 dark:ring-offset-zinc-900 ring-red-500 font-medium"
+                    : "bg-white/50 dark:bg-zinc-800/80 opacity-80 hover:opacity-100"
+                }`}
+              >
+                {f.label}
+                {count != null ? ` (${count.toLocaleString()})` : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
         {searchMode
           ? debouncedSearch.length >= 2
             ? `Search results across all users (up to ${SEARCH_LIMIT}).`
             : null
           : totalUsers != null
-            ? `Browsing newest users — page ${page + 1} of ${totalPages} (${totalUsers.toLocaleString()} total). Type 2+ characters to search everyone.`
-            : "Browsing newest users. Type 2+ characters to search everyone."}
+            ? `Browsing ${roleFilter === "all" ? "all users" : `role: ${roleFilter}`} — page ${page + 1} of ${totalPages} (${totalUsers.toLocaleString()} matching). Type 2+ characters to search within this filter.`
+            : `Browsing ${roleFilter === "all" ? "users" : `role: ${roleFilter}`}. Type 2+ characters to search.`}
       </p>
+      {roleFilter === "test" && (
+        <p className="text-sm text-violet-700 dark:text-violet-400 mb-4 rounded-lg border border-violet-500/30 bg-violet-500/10 px-3 py-2">
+          <span className="font-medium">Test users</span> still exist in the database, but Supabase RPCs for{" "}
+          <Link href="/admin/dashboard" className="underline">
+            Dashboard
+          </Link>{" "}
+          and{" "}
+          <Link href="/admin/analytics-dashboard" className="underline">
+            Growth analytics
+          </Link>{" "}
+          skip them via <code className="text-xs">is_admin_dashboard_user()</code> (role ≠ test). Verify with the checklist
+          below.
+        </p>
+      )}
+      <details className="text-sm text-zinc-600 dark:text-zinc-400 mb-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2">
+        <summary className="cursor-pointer font-medium text-zinc-800 dark:text-zinc-200">
+          How to verify test data is excluded from the dash
+        </summary>
+        <ul className="mt-2 list-disc pl-5 space-y-1.5">
+          <li>
+            <span className="font-medium">In Growth analytics:</span> footer note says counts exclude{" "}
+            <code className="text-xs">role=test</code>; period badge is <span className="text-green-600 dark:text-green-400">live</span>{" "}
+            (not hybrid/mock).
+          </li>
+          <li>
+            <span className="font-medium">Before / after:</span> note Total users on Dashboard, tag one user as test here, refresh
+            Dashboard — count should drop by 1 if SQL migrations are applied.
+          </li>
+          <li>
+            <span className="font-medium">In Supabase SQL editor</span> (run as postgres): compare{" "}
+            <code className="text-xs">count(*) FROM users</code> vs{" "}
+            <code className="text-xs">count(*) WHERE is_admin_dashboard_user(role)</code> — see{" "}
+            <code className="text-xs">admin_local_dashboard_verify.sql</code> in the iOS repo.
+          </li>
+          <li>
+            <span className="font-medium">Required SQL (in order):</span>{" "}
+            <code className="text-xs">admin_exclude_test_role.sql</code>,{" "}
+            <code className="text-xs">admin_growth_dashboard_exclude_test.sql</code>,{" "}
+            <code className="text-xs">admin_dashboard_exclude_test_extended.sql</code> (friendships, posts, gym, top users).
+          </li>
+        </ul>
+      </details>
 
       {error && <p className="text-red-600 dark:text-red-400 mb-4 text-sm">{error}</p>}
 
@@ -234,7 +381,11 @@ export default function UsersPage() {
                 {users.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      {searchMode ? "No users match your search." : "No users found."}
+                      {searchMode
+                        ? "No users match your search and role filter."
+                        : roleFilter === "all"
+                          ? "No users found."
+                          : `No users with role “${roleFilter}”.`}
                     </td>
                   </tr>
                 ) : (
@@ -257,14 +408,16 @@ export default function UsersPage() {
                           value={u.role}
                           onChange={(e) => updateRole(u.id, e.target.value)}
                           disabled={updating}
-                          className={`px-2 py-1 rounded text-sm ${roleColor(u.role)} border-0 cursor-pointer`}
+                          className={`px-2 py-1 rounded text-sm max-w-[14rem] ${roleColor(u.role)} border-0 cursor-pointer`}
                         >
-                          <option value="user">user</option>
-                          <option value="regular">regular</option>
-                          <option value="premium">premium</option>
-                          <option value="admin">admin</option>
-                          <option value="trainer">trainer</option>
-                          <option value="pro">pro</option>
+                          {ROLE_OPTIONS.some((o) => o.value === u.role.toLowerCase()) ? null : (
+                            <option value={u.role}>{u.role}</option>
+                          )}
+                          {ROLE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
                         </select>
                       </td>
                       <td className="p-4 text-sm text-zinc-500 dark:text-zinc-400">

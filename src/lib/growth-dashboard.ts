@@ -14,6 +14,15 @@ import {
 
 export type GrowthDataSource = "live" | "hybrid" | "mock" | "empty";
 
+/** Shown in UI when KPIs come from SQL RPCs that use `is_admin_dashboard_user`. */
+export const GROWTH_TEST_USER_EXCLUSION_NOTE =
+  "Counts exclude role=test (QA/script users).";
+
+function appendGrowthFetchNote(base?: string, extra: string = GROWTH_TEST_USER_EXCLUSION_NOTE): string | undefined {
+  const parts = [base?.trim(), extra.trim()].filter((s): s is string => Boolean(s?.length));
+  return parts.length ? parts.join(" ") : undefined;
+}
+
 export interface GrowthDashboardResult {
   payload: GrowthDashboardPayload;
   source: GrowthDataSource;
@@ -203,8 +212,222 @@ export function growthDashboardWindowStartIso(period: TimePeriod): string {
   if (period === "all") return "1970-01-01T00:00:00.000Z";
   const now = new Date();
   const utcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0);
+  if (period === 365) {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1)).toISOString();
+  }
   const daysBack = period === 1 ? 0 : period - 1;
   return new Date(utcMidnight - daysBack * 86400000).toISOString();
+}
+
+function utcDateKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function utcMonthKey(d: Date): string {
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Calendar bucket starts aligned with `get_growth_dashboard` generate_series. */
+function periodBucketDates(period: TimePeriod): Date[] {
+  const now = new Date();
+  const todayMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  if (period === 7 || period === 30) {
+    const n = period;
+    return Array.from({ length: n }, (_, i) => new Date(todayMs - (n - 1 - i) * 86400000));
+  }
+  if (period === 365) {
+    const anchor = new Date(todayMs);
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = anchor.getUTCMonth() - (11 - i);
+      const y = anchor.getUTCFullYear() + Math.floor(m / 12);
+      const month = ((m % 12) + 12) % 12;
+      return new Date(Date.UTC(y, month, 1));
+    });
+  }
+  return [];
+}
+
+function formatUtcBucketLabel(period: TimePeriod, bucketStart: Date): string {
+  if (period === 7) {
+    return new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: "UTC" }).format(bucketStart);
+  }
+  if (period === 30) {
+    return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" }).format(
+      bucketStart
+    );
+  }
+  if (period === 365) {
+    return new Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit", timeZone: "UTC" }).format(
+      bucketStart
+    );
+  }
+  return utcDateKey(bucketStart);
+}
+
+function countIntoPeriodBuckets(
+  period: TimePeriod,
+  timestamps: string[],
+  keyFn: (d: Date) => string
+): LabeledCount[] {
+  const buckets = periodBucketDates(period);
+  if (!buckets.length) return [];
+  const counts = new Map<string, number>();
+  for (const iso of timestamps) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) continue;
+    const k = keyFn(d);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const bucketKey = period === 365 ? utcMonthKey : utcDateKey;
+  return buckets.map((start) => ({
+    label: formatUtcBucketLabel(period, start),
+    value: counts.get(bucketKey(start)) ?? 0,
+  }));
+}
+
+async function fetchTestUserIds(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data } = await supabase.from("users").select("id").eq("role", "test").limit(5000);
+  return new Set((data ?? []).map((r) => String(r.id)));
+}
+
+async function backfillSignupBuckets(
+  supabase: SupabaseClient,
+  period: TimePeriod
+): Promise<LabeledCount[]> {
+  const startIso = growthDashboardWindowStartIso(period);
+  const { data, error } = await supabase
+    .from("users")
+    .select("created_at")
+    .neq("role", "test")
+    .gte("created_at", startIso)
+    .limit(50_000);
+  if (error || !data?.length) return [];
+  return countIntoPeriodBuckets(
+    period,
+    data.map((r) => String(r.created_at)),
+    period === 365 ? utcMonthKey : utcDateKey
+  );
+}
+
+async function backfillWorkoutBucketsFromEvents(
+  supabase: SupabaseClient,
+  period: TimePeriod
+): Promise<LabeledCount[]> {
+  const startIso = growthDashboardWindowStartIso(period);
+  const testIds = await fetchTestUserIds(supabase);
+  const { data, error } = await supabase
+    .from("analytics_events")
+    .select("timestamp, user_id")
+    .eq("event_name", "workout_session")
+    .gte("timestamp", startIso)
+    .limit(50_000);
+  if (error || !data?.length) return [];
+  const ts = data
+    .filter((r) => r.user_id != null && !testIds.has(String(r.user_id)))
+    .map((r) => String(r.timestamp));
+  return countIntoPeriodBuckets(period, ts, period === 365 ? utcMonthKey : utcDateKey);
+}
+
+async function backfillWorkoutBuckets(
+  supabase: SupabaseClient,
+  period: TimePeriod
+): Promise<LabeledCount[]> {
+  const rpcDays = growthRpcPeriodDays(period);
+  const { data: rpcData, error: rpcErr } = await supabase.rpc("get_admin_workouts_over_time", {
+    p_period_days: rpcDays,
+  });
+  if (!rpcErr && rpcData != null) {
+    const raw = unwrapMaybeJsonString(rpcData);
+    const fromRpc = normalizeLabeledCountSeriesLenient(raw);
+    if (fromRpc && seriesSum(fromRpc) > 0) return fromRpc;
+  }
+
+  const growthRes = await supabase.rpc("get_growth_dashboard", { p_period_days: rpcDays });
+  if (!growthRes.error && growthRes.data != null) {
+    const o = unwrapMaybeJsonString(growthRes.data);
+    if (isPlainObject(o)) {
+      const fromGrowth = rpcLabeledSeries(o as Record<string, unknown>, "workoutsOverTime");
+      if (fromGrowth && seriesSum(fromGrowth) > 0) return fromGrowth;
+    }
+  }
+
+  const fromEvents = await backfillWorkoutBucketsFromEvents(supabase, period);
+  if (seriesSum(fromEvents) > 0) return fromEvents;
+
+  const startIso = growthDashboardWindowStartIso(period);
+  const embedded = await supabase
+    .from("sessions")
+    .select("ended_at, users!inner(role)")
+    .not("ended_at", "is", null)
+    .neq("users.role", "test")
+    .gte("ended_at", startIso)
+    .limit(50_000);
+  if (!embedded.error && embedded.data?.length) {
+    const ended = embedded.data.map((r) => String(r.ended_at));
+    const buckets = countIntoPeriodBuckets(period, ended, period === 365 ? utcMonthKey : utcDateKey);
+    if (seriesSum(buckets) > 0) return buckets;
+  }
+
+  const testIds = await fetchTestUserIds(supabase);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("ended_at, user_id")
+    .not("ended_at", "is", null)
+    .gte("ended_at", startIso)
+    .limit(50_000);
+  if (error || !data?.length) return [];
+  const ended = data
+    .filter((r) => !testIds.has(String(r.user_id)))
+    .map((r) => String(r.ended_at));
+  return countIntoPeriodBuckets(period, ended, period === 365 ? utcMonthKey : utcDateKey);
+}
+
+async function backfillRoutineBuckets(
+  supabase: SupabaseClient,
+  period: TimePeriod
+): Promise<LabeledCount[]> {
+  const startIso = growthDashboardWindowStartIso(period);
+  const testIds = await fetchTestUserIds(supabase);
+  const { data, error } = await supabase
+    .from("routines")
+    .select("created_at, user_id")
+    .gte("created_at", startIso)
+    .limit(50_000);
+  if (error || !data?.length) return [];
+  const created = data
+    .filter((r) => !testIds.has(String(r.user_id)))
+    .map((r) => String(r.created_at));
+  return countIntoPeriodBuckets(period, created, period === 365 ? utcMonthKey : utcDateKey);
+}
+
+/** When RPC/hybrid return KPIs but empty chart arrays, rebuild buckets from tables (matches CSV exports). */
+async function backfillGrowthSeriesIfEmpty(
+  supabase: SupabaseClient,
+  period: TimePeriod,
+  payload: GrowthDashboardPayload
+): Promise<GrowthDashboardPayload> {
+  if (period === 1 || period === "all") return payload;
+  let next = payload;
+  if (seriesSum(next.signUpsOverTime) === 0 && next.newSignUps > 0) {
+    const buckets = await backfillSignupBuckets(supabase, period);
+    if (seriesSum(buckets) > 0) next = { ...next, signUpsOverTime: buckets };
+  }
+  const woSum = seriesSum(next.workoutsOverTime);
+  const woNeedsBackfill =
+    next.workoutsLogged > 0 &&
+    (woSum === 0 || Math.abs(woSum - next.workoutsLogged) > Math.max(3, Math.round(next.workoutsLogged * 0.08)));
+  if (woNeedsBackfill) {
+    const buckets = await backfillWorkoutBuckets(supabase, period);
+    const bucketSum = seriesSum(buckets);
+    if (bucketSum > 0 && (woSum === 0 || Math.abs(bucketSum - next.workoutsLogged) < Math.abs(woSum - next.workoutsLogged))) {
+      next = { ...next, workoutsOverTime: buckets };
+    }
+  }
+  if (seriesSum(next.routinesBuckets) === 0 && next.newRoutinesCreated > 0) {
+    const buckets = await backfillRoutineBuckets(supabase, period);
+    if (seriesSum(buckets) > 0) next = { ...next, routinesBuckets: buckets };
+  }
+  return next;
 }
 
 /**
@@ -230,10 +453,22 @@ function normalizeLabeledCountSeriesLenient(raw: unknown): LabeledCount[] | null
     } else continue;
     out.push({ label, value: Math.max(0, Math.trunc(n)) });
   }
-  return out.length > 0 ? out : null;
+  return out;
+}
+
+/** Read a labeled series from RPC JSON (camelCase keys from `jsonb_build_object`). */
+function rpcLabeledSeries(o: Record<string, unknown>, key: string): LabeledCount[] | null {
+  let raw: unknown = o[key];
+  if (typeof raw === "string") raw = unwrapMaybeJsonString(raw);
+  if (!Array.isArray(raw)) return null;
+  return normalizeLabeledCountSeriesLenient(raw);
 }
 
 function alignSeriesToKpi(series: LabeledCount[], kpi: number, labelFallback: LabeledCount[]): LabeledCount[] {
+  /** Real SQL buckets: keep shape; do not fabricate equal slices per day. */
+  if (series.length > 0 && seriesSum(series) > 0) {
+    return series;
+  }
   if (kpi <= 0) {
     if (series.length > 0) return series.map((x) => ({ ...x, value: 0 }));
     if (labelFallback.length > 0) return labelFallback.map((x) => ({ label: x.label, value: 0 }));
@@ -241,10 +476,7 @@ function alignSeriesToKpi(series: LabeledCount[], kpi: number, labelFallback: La
   }
   const base = series.length > 0 ? series : labelFallback.map((x) => ({ label: x.label, value: 0 }));
   if (base.length === 0) return [];
-  const sum = seriesSum(base);
-  if (sum === 0) return spreadWorkoutsAcrossSignUpBuckets(base, kpi);
-  if (sum === kpi) return base;
-  return scaleSeriesToTotal(base, kpi);
+  return base.map((x) => ({ label: x.label, value: 0 }));
 }
 
 /**
@@ -255,11 +487,26 @@ function reconcileGrowthSeriesWithKpis(
   _period: TimePeriod,
   labelTemplate: GrowthDashboardPayload
 ): GrowthDashboardPayload {
-  const labelFb = p.signUpsOverTime.length > 0 ? p.signUpsOverTime : labelTemplate.signUpsOverTime;
-  const signUpsOverTime = alignSeriesToKpi(p.signUpsOverTime, p.newSignUps, labelFb);
-  const workoutsOverTime = alignSeriesToKpi(p.workoutsOverTime, p.workoutsLogged, signUpsOverTime);
-  const premiumBuckets = alignSeriesToKpi(p.premiumBuckets, p.newPremiumSubscribers, signUpsOverTime);
-  const routinesBuckets = alignSeriesToKpi(p.routinesBuckets, p.newRoutinesCreated, signUpsOverTime);
+  const signUpsOverTime =
+    seriesSum(p.signUpsOverTime) > 0
+      ? p.signUpsOverTime
+      : alignSeriesToKpi(p.signUpsOverTime, p.newSignUps, labelTemplate.signUpsOverTime);
+  const workoutsOverTime =
+    seriesSum(p.workoutsOverTime) > 0
+      ? p.workoutsOverTime
+      : alignSeriesToKpi(p.workoutsOverTime, p.workoutsLogged, signUpsOverTime);
+  const premiumBuckets =
+    seriesSum(p.premiumBuckets) > 0
+      ? p.premiumBuckets
+      : p.premiumBuckets.length > 0
+        ? p.premiumBuckets
+        : [];
+  const routinesBuckets =
+    seriesSum(p.routinesBuckets) > 0
+      ? p.routinesBuckets
+      : p.routinesBuckets.length > 0
+        ? p.routinesBuckets
+        : [];
 
   const platformActivity = {
     ...p.platformActivity,
@@ -312,20 +559,20 @@ function overlayGrowthRpcSeriesIfPresent(
   if (!periodMatchesRpcPayload(period, o)) return base;
 
   let out: GrowthDashboardPayload = { ...base };
-  const su = normalizeLabeledCountSeriesLenient(o.signUpsOverTime);
-  if (su) out = { ...out, signUpsOverTime: su };
-  const wo = normalizeLabeledCountSeriesLenient(o.workoutsOverTime);
-  if (wo) out = { ...out, workoutsOverTime: wo };
-  const pr = normalizeLabeledCountSeriesLenient(o.premiumBuckets);
-  if (pr) out = { ...out, premiumBuckets: pr };
-  const ro = normalizeLabeledCountSeriesLenient(o.routinesBuckets);
-  if (ro) out = { ...out, routinesBuckets: ro };
-  const cities = normalizeLabeledCountSeriesLenient(o.usersByCity);
-  if (cities?.length) out = { ...out, usersByCity: cities.slice(0, GROWTH_TOP_CITIES_LIMIT) };
-  const gen = normalizeLabeledCountSeriesLenient(o.usersByGender);
-  if (gen) out = { ...out, usersByGender: gen };
-  const ag = normalizeLabeledCountSeriesLenient(o.usersByAgeGroup);
-  if (ag) out = { ...out, usersByAgeGroup: ag };
+  const su = rpcLabeledSeries(o, "signUpsOverTime");
+  if (su != null && seriesSum(su) > 0) out = { ...out, signUpsOverTime: su };
+  const wo = rpcLabeledSeries(o, "workoutsOverTime");
+  if (wo != null && seriesSum(wo) > 0) out = { ...out, workoutsOverTime: wo };
+  const pr = rpcLabeledSeries(o, "premiumBuckets");
+  if (pr != null && seriesSum(pr) > 0) out = { ...out, premiumBuckets: pr };
+  const ro = rpcLabeledSeries(o, "routinesBuckets");
+  if (ro != null && seriesSum(ro) > 0) out = { ...out, routinesBuckets: ro };
+  const cities = rpcLabeledSeries(o, "usersByCity");
+  if (cities != null && cities.length) out = { ...out, usersByCity: cities.slice(0, GROWTH_TOP_CITIES_LIMIT) };
+  const gen = rpcLabeledSeries(o, "usersByGender");
+  if (gen != null && gen.length) out = { ...out, usersByGender: gen };
+  const ag = rpcLabeledSeries(o, "usersByAgeGroup");
+  if (ag != null && ag.length) out = { ...out, usersByAgeGroup: ag };
 
   const tu = toInt(o.totalUsers);
   const ns = toInt(o.newSignUps);
@@ -368,8 +615,8 @@ function tryMergeRpcWorkoutsIntoPayload(
   if (!isPlainObject(raw)) return null;
   const o = raw as Record<string, unknown>;
   if (!periodMatchesRpcPayload(period, o)) return null;
-  const workouts = normalizeLabeledCountSeriesLenient(o.workoutsOverTime);
-  if (!workouts) return null;
+  const workouts = rpcLabeledSeries(o, "workoutsOverTime");
+  if (workouts == null) return null;
   const wl = toInt(o.workoutsLogged);
   const seriesSum = workouts.reduce((a, b) => a + b.value, 0);
   const effective = Math.max(wl, seriesSum);
@@ -404,7 +651,11 @@ function tryMergeRpcWorkoutsKpiOnly(
   const normalized = normalizeLabeledCountSeriesLenient(o.workoutsOverTime);
   const seriesSum = normalized ? normalized.reduce((a, b) => a + b.value, 0) : 0;
   const workoutsOverTime =
-    normalized && seriesSum > 0 ? normalized : spreadWorkoutsAcrossSignUpBuckets(base.signUpsOverTime, wl);
+    normalized && seriesSum > 0
+      ? seriesSum === wl
+        ? normalized
+        : scaleSeriesToTotal(normalized, wl)
+      : [];
   return {
     ...base,
     workoutsOverTime,
@@ -422,14 +673,14 @@ export function parseGrowthDashboardPayload(raw: unknown, period: TimePeriod): G
   if (!isPlainObject(raw)) return null;
   const o = raw as Record<string, unknown>;
   if (!periodMatchesRpcPayload(period, o)) return null;
-  const signUps = normalizeLabeledCountSeriesLenient(o.signUpsOverTime);
-  const workouts = normalizeLabeledCountSeriesLenient(o.workoutsOverTime);
-  const premium = normalizeLabeledCountSeriesLenient(o.premiumBuckets);
-  const routines = normalizeLabeledCountSeriesLenient(o.routinesBuckets);
-  const cities = normalizeLabeledCountSeriesLenient(o.usersByCity);
-  const gender = normalizeLabeledCountSeriesLenient(o.usersByGender);
-  const age = normalizeLabeledCountSeriesLenient(o.usersByAgeGroup);
-  if (!signUps || !workouts || !premium || !routines || !cities || !gender || !age) return null;
+  const signUps = rpcLabeledSeries(o, "signUpsOverTime");
+  const workouts = rpcLabeledSeries(o, "workoutsOverTime");
+  const premium = rpcLabeledSeries(o, "premiumBuckets") ?? [];
+  const routines = rpcLabeledSeries(o, "routinesBuckets") ?? [];
+  const cities = rpcLabeledSeries(o, "usersByCity");
+  const gender = rpcLabeledSeries(o, "usersByGender");
+  const age = rpcLabeledSeries(o, "usersByAgeGroup");
+  if (signUps == null || workouts == null || cities == null || gender == null || age == null) return null;
   if (!isPlainObject(o.platformActivity)) return null;
   const paRaw = o.platformActivity;
   const citiesSliced = cities.slice(0, GROWTH_TOP_CITIES_LIMIT);
@@ -615,7 +866,11 @@ async function fetchUserDemoRows(supabase: SupabaseClient): Promise<UserDemoRow[
   const out: UserDemoRow[] = [];
   const page = 1000;
   for (let from = 0; ; from += page) {
-    const { data, error } = await supabase.from("users").select("gender, city, birthdate").range(from, from + page - 1);
+    const { data, error } = await supabase
+      .from("users")
+      .select("gender, city, birthdate")
+      .neq("role", "test")
+      .range(from, from + page - 1);
     if (error) return null;
     if (!data?.length) break;
     out.push(...(data as UserDemoRow[]));
@@ -725,6 +980,7 @@ async function countSignupsSince(supabase: SupabaseClient, startIso: string): Pr
   const { count, error } = await supabase
     .from("users")
     .select("id", { count: "exact", head: true })
+    .neq("role", "test")
     .gte("created_at", startIso);
   if (error) return null;
   return count ?? 0;
@@ -821,10 +1077,18 @@ async function fetchHybridDashboard(
   const usersByAgeGroup = dem?.usersByAgeGroup ?? base.usersByAgeGroup;
   const mostActiveCityFromDem = dem?.mostActiveCity ?? base.platformActivity.mostActiveCity;
 
-  const signUpsScaled = scaleSeriesToTotal(base.signUpsOverTime, newSignUps);
-  const workoutsOverTime = workoutsLoggedFromApi
-    ? spreadWorkoutsAcrossSignUpBuckets(signUpsScaled, workoutsLogged)
-    : scaleSeriesToTotal(base.workoutsOverTime, workoutsLogged);
+  const signUpsScaled =
+    seriesSum(base.signUpsOverTime) > 0
+      ? seriesSum(base.signUpsOverTime) === newSignUps
+        ? base.signUpsOverTime
+        : scaleSeriesToTotal(base.signUpsOverTime, newSignUps)
+      : [];
+  const workoutsOverTime =
+    seriesSum(base.workoutsOverTime) > 0
+      ? seriesSum(base.workoutsOverTime) === workoutsLogged
+        ? base.workoutsOverTime
+        : scaleSeriesToTotal(base.workoutsOverTime, workoutsLogged)
+      : [];
 
   const [routinesCnt, premiumDayRes] = await Promise.all([
     countTableSinceCreated(supabase, "routines", startIso),
@@ -853,7 +1117,10 @@ async function fetchHybridDashboard(
     signUpsOverTime: signUpsScaled,
     workoutsOverTime,
     premiumBuckets: scaleSeriesToTotal(base.premiumBuckets, newPremiumSubscribers),
-    routinesBuckets: spreadWorkoutsAcrossSignUpBuckets(signUpsScaled, newRoutinesCreated),
+    routinesBuckets:
+      seriesSum(base.routinesBuckets) > 0
+        ? scaleSeriesToTotal(base.routinesBuckets, newRoutinesCreated)
+        : [],
     usersByGender,
     usersByCity,
     usersByAgeGroup,
@@ -901,6 +1168,40 @@ async function fetchHybridDashboard(
   };
 }
 
+async function finalizeGrowthPayload(
+  supabase: SupabaseClient,
+  period: TimePeriod,
+  payload: GrowthDashboardPayload,
+  fetchNote?: string
+): Promise<{ payload: GrowthDashboardPayload; fetchNote?: string }> {
+  const backfilled = await backfillGrowthSeriesIfEmpty(supabase, period, payload);
+  const out = ensureDemographics(backfilled, period);
+  let note = fetchNote;
+  if (
+    period !== 1 &&
+    period !== "all" &&
+    out.workoutsLogged > 0 &&
+    seriesSum(out.workoutsOverTime) === 0
+  ) {
+    note = appendGrowthFetchNote(
+      note,
+      "Workout chart empty: run FitLog/scripts/admin_workouts_over_time_rpc.sql in Supabase SQL editor (as project owner), then NOTIFY pgrst reload; restart juhd-admin."
+    );
+  }
+  return { payload: out, fetchNote: note };
+}
+
+async function finalizeGrowthResult(
+  supabase: SupabaseClient,
+  period: TimePeriod,
+  payload: GrowthDashboardPayload,
+  source: GrowthDataSource,
+  fetchNote?: string
+): Promise<GrowthDashboardResult> {
+  const finalized = await finalizeGrowthPayload(supabase, period, payload, fetchNote);
+  return { payload: finalized.payload, source, fetchNote: finalized.fetchNote };
+}
+
 /** Ensure doughnut / bar charts always have rows (RPC may return []). Reconcile time-series sums to KPIs. */
 function ensureDemographics(p: GrowthDashboardPayload, period: TimePeriod): GrowthDashboardPayload {
   const template = createEmptyGrowthDashboardPayload(period);
@@ -917,7 +1218,8 @@ function ensureDemographics(p: GrowthDashboardPayload, period: TimePeriod): Grow
 const GROWTH_FETCH_TIMEOUT_MS_DEFAULT = 22_000;
 
 function growthFetchTimeoutMs(period: TimePeriod): number {
-  if (period === "all" || period === 30) return 90_000;
+  if (period === "all" || period === 365) return 120_000;
+  if (period === 30) return 90_000;
   if (period === 7) return 32_000;
   return GROWTH_FETCH_TIMEOUT_MS_DEFAULT;
 }
@@ -956,9 +1258,10 @@ async function fetchGrowthDashboardCore(
       const shouldRebuildWorkoutChart =
         wl > 0 && parsedBase.workoutsOverTime.reduce((a, b) => a + b.value, 0) !== wl;
       const reconcile = async (base: GrowthDashboardPayload, workouts: number, note: string) => {
+        const woSum = seriesSum(base.workoutsOverTime);
         const wo =
-          workouts > 0 && base.workoutsOverTime.reduce((a, b) => a + b.value, 0) !== workouts
-            ? spreadWorkoutsAcrossSignUpBuckets(base.signUpsOverTime, workouts)
+          workouts > 0 && woSum > 0 && woSum !== workouts
+            ? scaleSeriesToTotal(base.workoutsOverTime, workouts)
             : base.workoutsOverTime;
         const merged: GrowthDashboardPayload = {
           ...base,
@@ -967,11 +1270,7 @@ async function fetchGrowthDashboardCore(
           platformActivity: { ...base.platformActivity, totalWorkouts: workouts },
         };
         const aligned = await alignTodayWithDashboardRpcs(supabase, period, merged);
-        return {
-          payload: ensureDemographics(aligned, period),
-          source: "live" as const,
-          fetchNote: note,
-        };
+        return finalizeGrowthResult(supabase, period, aligned, "live", appendGrowthFetchNote(note));
       };
 
       if (wl !== parsedBase.workoutsLogged || shouldRebuildWorkoutChart) {
@@ -984,7 +1283,17 @@ async function fetchGrowthDashboardCore(
         );
       }
       const aligned = await alignTodayWithDashboardRpcs(supabase, period, parsedBase);
-      return { payload: ensureDemographics(aligned, period), source: "live" };
+      const backfillNote =
+        seriesSum(parsedBase.signUpsOverTime) === 0 && parsedBase.newSignUps > 0
+          ? " Chart buckets rebuilt from users/sessions/routines tables."
+          : "";
+      return finalizeGrowthResult(
+        supabase,
+        period,
+        aligned,
+        "live",
+        appendGrowthFetchNote(backfillNote || undefined)
+      );
     }
   }
 
@@ -995,27 +1304,29 @@ async function fetchGrowthDashboardCore(
     const patched =
       tryMergeRpcWorkoutsIntoPayload(rpcRaw, period, body) ?? tryMergeRpcWorkoutsKpiOnly(rpcRaw, period, body);
     if (patched) {
-      return {
-        payload: ensureDemographics(patched, period),
-        source: "hybrid",
-        fetchNote:
-          "Workouts (KPI + chart series) taken from get_growth_dashboard. Remaining KPIs/charts are hybrid. Full live parse failed — often a null or unexpected type in demographics/chart JSON; check Supabase logs or export RPC JSON.",
-      };
+      return finalizeGrowthResult(
+        supabase,
+        period,
+        patched,
+        "hybrid",
+        appendGrowthFetchNote(
+          "Workouts (KPI + chart series) taken from get_growth_dashboard. Remaining KPIs/charts are hybrid. Full live parse failed — often a null or unexpected type in demographics/chart JSON; check Supabase logs or export RPC JSON."
+        )
+      );
     }
-    return {
-      payload: ensureDemographics(body, period),
-      source: hybrid.source,
-      fetchNote:
-        `${hybrid.fetchNote ?? ""} Chart series merged from get_growth_dashboard JSON where possible; time-series sums reconciled to KPIs.`.trim(),
-    };
+    return finalizeGrowthResult(
+      supabase,
+      period,
+      body,
+      hybrid.source,
+      appendGrowthFetchNote(
+        `${hybrid.fetchNote ?? ""} Chart series merged from get_growth_dashboard JSON where possible.`.trim()
+      )
+    );
   }
 
   if (hybrid) {
-    return {
-      payload: ensureDemographics(hybrid.payload, period),
-      source: hybrid.source,
-      fetchNote: hybrid.fetchNote,
-    };
+    return finalizeGrowthResult(supabase, period, hybrid.payload, hybrid.source, hybrid.fetchNote);
   }
 
   return {

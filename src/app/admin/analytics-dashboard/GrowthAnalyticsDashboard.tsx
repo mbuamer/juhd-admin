@@ -31,10 +31,14 @@ import {
   missingDataWarningMessage,
   missingProfileStats,
   periodLabel,
+  periodChartBucketHint,
+  periodAverageDayLabel,
+  formatAveragePerDay,
   safeDivide,
   stickyFactorPercent,
   stickyInterpretationLabel,
 } from "@/lib/growth-analytics-math";
+import { GROWTH_TEST_USER_EXCLUSION_NOTE } from "@/lib/growth-dashboard";
 import { HoverTip } from "./growth-components";
 import Link from "next/link";
 import {
@@ -295,7 +299,7 @@ export function GrowthAnalyticsDashboard({
   const activeLabel =
     source === "live" ? "Active users · period" : "Active users · period (est.)";
   const activeSub = source === "live" ? undefined : "Estimated from hybrid events";
-  const workoutsLabel = period === 1 ? "Workouts · today" : `Workouts · ${pLabel}`;
+  const workoutsLabel = `Workouts · ${pLabel}`;
   const postsHeroLabel = "Posts · today";
   const activeMeta =
     source === "live"
@@ -317,6 +321,10 @@ export function GrowthAnalyticsDashboard({
   });
 
   const premiumConv = safeDivide(payload.newPremiumSubscribers, payload.newSignUps) * 100;
+  const avgSignupsPerDay = formatAveragePerDay(payload.newSignUps, period);
+  const avgWorkoutsPerDay = formatAveragePerDay(payload.workoutsLogged, period);
+  const chartBucketHint = periodChartBucketHint(period);
+  const showHybridWarning = source === "hybrid" || source === "mock";
 
   const postsByTypeRows = numeric.content ? postsByTypeSorted(numeric.content.postsByType) : [];
 
@@ -628,7 +636,24 @@ export function GrowthAnalyticsDashboard({
             </div>
           </section>
 
-          <PeriodAnalyticsPanel period={period} onPeriodChange={onPeriodChange} dataSource={source} loading={periodLoading}>
+          <PeriodAnalyticsPanel
+            period={period}
+            onPeriodChange={onPeriodChange}
+            dataSource={source}
+            dataNote={fetchNote}
+            loading={periodLoading}
+          >
+            {showHybridWarning && (
+              <div className="mb-6 rounded-xl border border-amber-500/25 bg-amber-500/[0.07] px-4 py-3 text-sm text-amber-100/90">
+                <p className="font-medium text-amber-200">Partial or demo data</p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-100/80">
+                  Source is <span className="font-semibold">{source}</span> — some KPIs or charts may be estimated. Deploy{" "}
+                  <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">get_growth_dashboard</code> and avoid{" "}
+                  <code className="rounded bg-black/30 px-1 py-0.5 text-[10px]">NEXT_PUBLIC_GROWTH_USE_MOCK</code> in production.
+                </p>
+              </div>
+            )}
+            <p className="mb-6 text-[11px] leading-relaxed text-zinc-500">{GROWTH_TEST_USER_EXCLUSION_NOTE}</p>
             <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               <SupportStatCard
                 label={activeLabel}
@@ -639,7 +664,20 @@ export function GrowthAnalyticsDashboard({
                 status={payload.activeUsers > 0 ? "healthy" : "neutral"}
               />
               <SupportStatCard label="Signups" value={payload.newSignUps} delta="No comparison yet" />
+              <SupportStatCard
+                label="Avg signups / day"
+                value={avgSignupsPerDay}
+                hint={`Total sign-ups in ${periodAverageDayLabel(period)} ÷ ${period} days.`}
+                delta="No comparison yet"
+              />
               <SupportStatCard label="Workouts" value={payload.workoutsLogged} delta="No comparison yet" status="strong" />
+              <SupportStatCard
+                label="Avg workouts / day"
+                value={avgWorkoutsPerDay}
+                hint={`Finished sessions in ${periodAverageDayLabel(period)} ÷ ${period} days.`}
+                delta="No comparison yet"
+                status="strong"
+              />
               <SupportStatCard label="New premium" value={payload.newPremiumSubscribers} delta="No comparison yet" />
               <SupportStatCard label="New routines" value={payload.newRoutinesCreated} delta="No comparison yet" />
               <SupportStatCard
@@ -662,7 +700,7 @@ export function GrowthAnalyticsDashboard({
               <HoverTip text={CHART_HELP.growthActivity}>
                 <ChartPanel
                   title="Growth & activity"
-                  subtitle="Sign-ups and workouts per bucket"
+                  subtitle={`Sign-ups and workouts · ${chartBucketHint}`}
                   tall
                   onExpand={() => setExpanded("growthActivity")}
                 >
@@ -675,7 +713,7 @@ export function GrowthAnalyticsDashboard({
               </HoverTip>
               <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                 <HoverTip text={CHART_HELP.signUps}>
-                  <ChartPanel title={CHART_TITLE.signUps} subtitle="New registrations" tall onExpand={() => setExpanded("signUps")}>
+                  <ChartPanel title={CHART_TITLE.signUps} subtitle={`New registrations · ${chartBucketHint}`} tall onExpand={() => setExpanded("signUps")}>
                     {chartJsReady ? (
                       <Line data={charts.signUps} options={lineOptions} />
                     ) : (
@@ -684,7 +722,7 @@ export function GrowthAnalyticsDashboard({
                   </ChartPanel>
                 </HoverTip>
                 <HoverTip text={CHART_HELP.workouts}>
-                  <ChartPanel title={CHART_TITLE.workouts} subtitle="Finished sessions" tall onExpand={() => setExpanded("workouts")}>
+                  <ChartPanel title={CHART_TITLE.workouts} subtitle={`Finished sessions · ${chartBucketHint}`} tall onExpand={() => setExpanded("workouts")}>
                     {chartJsReady ? (
                       <Line data={charts.workouts} options={lineOptions} />
                     ) : (

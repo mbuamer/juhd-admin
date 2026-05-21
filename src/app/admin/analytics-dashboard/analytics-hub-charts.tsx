@@ -82,3 +82,44 @@ export const hubBarOptions = {
     y: { grid: { display: false }, ticks: { color: MUTED } },
   },
 };
+
+export const hubVerticalBarOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    x: { grid: { display: false }, ticks: { color: MUTED, maxRotation: 45 } },
+    y: { beginAtZero: true, grid: { color: GRID }, ticks: { color: MUTED } },
+  },
+};
+
+export function singleLineChartData(series: LabeledCount[], label: string, color = ACCENT) {
+  return {
+    labels: series.map((r) => r.label),
+    datasets: [
+      {
+        label,
+        data: series.map((r) => r.value),
+        borderColor: color,
+        backgroundColor: color === ACCENT ? "rgba(255, 59, 48, 0.12)" : "rgba(228, 228, 231, 0.08)",
+        fill: true,
+        tension: 0.35,
+        pointRadius: 2,
+      },
+    ],
+  };
+}
+
+export function verticalBarChartData(series: LabeledCount[], label: string, color = ACCENT) {
+  return {
+    labels: series.map((r) => r.label),
+    datasets: [
+      {
+        label,
+        data: series.map((r) => r.value),
+        backgroundColor: color,
+        borderRadius: 4,
+      },
+    ],
+  };
+}

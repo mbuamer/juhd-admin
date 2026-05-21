@@ -3,9 +3,14 @@ import type { GrowthAnalyticsPageBundle } from "@/lib/growth-analytics-fetch";
 import type { AnalyticsHubExtras, BreakdownMetric } from "@/lib/analytics-hub-rpc";
 import type { PeriodFilterDays } from "@/lib/growth-analytics-views";
 import { contentCountsForPeriod } from "@/lib/growth-numeric-snapshot";
-import { labeledValue, safeDivide } from "@/lib/growth-analytics-math";
+import {
+  formatAveragePerDay,
+  labeledValue,
+  periodAverageDayLabel,
+  safeDivide,
+} from "@/lib/growth-analytics-math";
 
-export type HubTabId = "overview" | "period" | "tables" | "alltime" | "ratios" | "targeting";
+export type HubTabId = "overview" | "period" | "charts" | "tables" | "alltime" | "ratios" | "targeting";
 
 export interface HubMetric {
   id: string;
@@ -138,11 +143,9 @@ export function buildAnalyticsHubData(
   const gymPeriod =
     hub.gymPeriodCheckins != null
       ? hub.gymPeriodCheckins
-      : period === 1
-        ? gym?.checkinsToday
-        : period === 7
-          ? gym?.checkinsWeek
-          : gym?.checkinsMonth;
+      : period === 7
+        ? gym?.checkinsWeek
+        : gym?.checkinsMonth;
 
   const deletionsToday = hub.deletions?.today ?? null;
   const deletionsPeriod = hub.deletions?.period ?? null;
@@ -206,13 +209,26 @@ export function buildAnalyticsHubData(
 
   const periodMetrics: HubMetric[] = [
     { id: "signups", label: "User signups", value: periodP.newSignUps },
+    {
+      id: "avg-signups",
+      label: "Avg signups / day",
+      value: formatAveragePerDay(periodP.newSignUps, period),
+      sub: periodAverageDayLabel(period),
+    },
     { id: "workouts", label: "Workouts", value: periodP.workoutsLogged },
+    {
+      id: "avg-workouts",
+      label: "Avg workouts / day",
+      value: formatAveragePerDay(periodP.workoutsLogged, period),
+      sub: periodAverageDayLabel(period),
+    },
     { id: "routines", label: "New routines", value: periodP.newRoutinesCreated },
     {
       id: "posts",
       label: "New posts",
       value: periodContent?.posts ?? null,
-      sub: period === 7 ? "~calendar week" : period === 30 ? "~calendar month" : "UTC day",
+      sub:
+        period === 7 ? "~calendar week" : period === 30 ? "~calendar month" : period === 365 ? "~year proxy (month cols)" : "UTC day",
       unavailable: !periodContent,
     },
     {

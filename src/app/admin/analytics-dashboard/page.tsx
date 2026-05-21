@@ -17,7 +17,7 @@ import { registerGrowthCharts } from "./GrowthAnalyticsDashboard";
 export default function GrowthAnalyticsPage() {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
-  const [period, setPeriod] = useState<PeriodFilterDays>(7);
+  const [period, setPeriod] = useState<PeriodFilterDays>(30);
   const [bundle, setBundle] = useState<GrowthAnalyticsPageBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [periodLoading, setPeriodLoading] = useState(false);

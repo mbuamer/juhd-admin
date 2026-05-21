@@ -5,6 +5,32 @@ export function safeDivide(numerator: number, denominator: number): number {
   return numerator / denominator;
 }
 
+/** Mean per calendar day in a 7 / 30 / 365-day analytics window. */
+export function averagePerDayInPeriod(total: number, periodDays: 7 | 30 | 365): number {
+  return safeDivide(total, periodDays);
+}
+
+export function formatAveragePerDay(total: number, periodDays: 7 | 30 | 365, digits = 1): string {
+  const avg = averagePerDayInPeriod(total, periodDays);
+  if (!Number.isFinite(avg)) return "—";
+  return avg.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+export function periodFilterTabLabel(period: 7 | 30 | 365): string {
+  if (period === 7) return "Weekly";
+  if (period === 30) return "Monthly";
+  return "Yearly";
+}
+
+export function periodAverageDayLabel(period: 7 | 30 | 365): string {
+  if (period === 7) return "weekly window";
+  if (period === 30) return "monthly window";
+  return "yearly window";
+}
+
 /** Returns null when prior period is unknown (no comparison RPC). */
 export function percentChange(current: number, previous: number | null | undefined): number | null {
   if (previous == null || !Number.isFinite(previous) || previous <= 0) return null;
@@ -128,14 +154,25 @@ export function communityHealthScorePlaceholder(input: {
 
 export function periodLabel(period: import("@/lib/analytics-dashboard-mock").TimePeriod): string {
   if (period === 1) return "Last 1 day (UTC window)";
-  if (period === 7) return "Last 7 days";
-  if (period === 30) return "Last 30 days";
+  if (period === 7) return "Last 7 days (weekly)";
+  if (period === 30) return "Last 30 days (monthly)";
+  if (period === 365) return "Last 365 days (yearly)";
   return "All time";
 }
 
-export function hubWindowLabel(period: 0 | 1 | 7 | 30): string {
+/** Chart x-axis bucket description for period analytics panels. */
+export function periodChartBucketHint(period: import("@/lib/analytics-dashboard-mock").TimePeriod): string {
+  if (period === 1) return "Hourly buckets (UTC today)";
+  if (period === 7) return "Signups & workouts per day (7 days)";
+  if (period === 30) return "Signups & workouts per day (30 days)";
+  if (period === 365) return "Signups & workouts per month (12 months)";
+  return "Period buckets";
+}
+
+export function hubWindowLabel(period: 0 | 1 | 7 | 30 | 365): string {
   if (period === 0) return "All time";
   if (period === 1) return "Last 1 day (UTC)";
-  if (period === 7) return "Last 7 days";
-  return "Last 30 days";
+  if (period === 7) return "Weekly (7 days)";
+  if (period === 30) return "Monthly (30 days)";
+  return "Yearly (365 days)";
 }

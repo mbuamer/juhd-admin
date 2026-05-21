@@ -403,23 +403,32 @@ export function TargetingSummaryCard({
   return inner;
 }
 
+const DATA_SOURCE_STYLES: Record<string, string> = {
+  live: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  hybrid: "border-amber-500/30 bg-amber-500/10 text-amber-200",
+  mock: "border-violet-500/30 bg-violet-500/10 text-violet-200",
+  empty: "border-zinc-600 bg-zinc-800/50 text-zinc-400",
+};
+
 export function PeriodAnalyticsPanel({
   period,
   onPeriodChange,
   dataSource,
+  dataNote,
   loading,
   children,
 }: {
-  period: 1 | 7 | 30;
-  onPeriodChange: (p: 1 | 7 | 30) => void;
+  period: 7 | 30 | 365;
+  onPeriodChange: (p: 7 | 30 | 365) => void;
   dataSource?: string;
+  dataNote?: string;
   loading?: boolean;
   children: ReactNode;
 }) {
   const tabs = [
-    { d: 1 as const, label: "1 Day" },
-    { d: 7 as const, label: "7 Days" },
-    { d: 30 as const, label: "30 Days" },
+    { d: 7 as const, label: "Weekly" },
+    { d: 30 as const, label: "Monthly" },
+    { d: 365 as const, label: "Yearly" },
   ];
   return (
     <section className="rounded-2xl border border-white/[0.08] bg-zinc-950/30 p-5 sm:p-8">
@@ -431,7 +440,12 @@ export function PeriodAnalyticsPanel({
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {dataSource && (
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
+            <span
+              className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${
+                DATA_SOURCE_STYLES[dataSource] ?? DATA_SOURCE_STYLES.empty
+              }`}
+              title={dataNote}
+            >
               {dataSource}
             </span>
           )}

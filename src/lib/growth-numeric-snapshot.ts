@@ -119,13 +119,16 @@ function parseGymRow(r: Record<string, unknown>): AdminGymCheckinStatsRow {
 /** Map growth period filter to content-stats window columns (approximate for 7d/30d). */
 export function contentCountsForPeriod(
   content: AdminContentStatsRow,
-  period: 1 | 7 | 30
+  period: 1 | 7 | 30 | 365
 ): { posts: number; comments: number; likes: number } {
   if (period === 1) {
     return { posts: content.postsToday, comments: content.commentsToday, likes: content.likesToday };
   }
   if (period === 7) {
     return { posts: content.postsWeek, comments: content.commentsWeek, likes: content.likesWeek };
+  }
+  if (period === 30) {
+    return { posts: content.postsMonth, comments: content.commentsMonth, likes: content.likesMonth };
   }
   return { posts: content.postsMonth, comments: content.commentsMonth, likes: content.likesMonth };
 }
