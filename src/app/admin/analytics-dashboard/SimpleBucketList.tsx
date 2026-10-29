@@ -5,10 +5,12 @@ import type { LabeledCount } from "@/lib/analytics-dashboard-mock";
 /** Horizontal bar rows — easier to read than line/area charts. */
 export function SimpleBucketList({
   rows,
+  additive = true,
   color = "#FF3B30",
   emptyMessage = "No data in this period.",
 }: {
   rows: LabeledCount[];
+  additive?: boolean;
   color?: string;
   emptyMessage?: string;
 }) {
@@ -28,7 +30,7 @@ export function SimpleBucketList({
   return (
     <div className="max-h-[22rem] overflow-y-auto pr-1">
       <p className="mb-3 text-xs text-zinc-500">
-        Total in chart: <span className="font-medium text-zinc-300">{total.toLocaleString()}</span>
+        {additive ? <>Total in chart: <span className="font-medium text-zinc-300">{total.toLocaleString()}</span></> : "Unique users per bucket · users can appear in several buckets"}
       </p>
       <ul className="space-y-2.5">
         {filtered.map((r) => {

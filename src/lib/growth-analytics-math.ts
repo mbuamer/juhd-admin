@@ -98,9 +98,9 @@ export function missingProfileStats(
   usersByAgeGroup: LabeledCount[],
   usersByGender: LabeledCount[]
 ): MissingProfileStats {
-  const cityUnspecified = labeledValue(usersByCity, "City not specified");
-  const ageUnspecified = labeledValue(usersByAgeGroup, "Age / birthdate not specified");
-  const genderUnspecified = labeledValue(usersByGender, "Gender not specified");
+  const cityUnspecified = labeledSumWhere(usersByCity, label => ["not specified", "city not specified"].includes(label.trim().toLowerCase()));
+  const ageUnspecified = labeledSumWhere(usersByAgeGroup, label => ["not specified", "age / birthdate not specified"].includes(label.trim().toLowerCase()));
+  const genderUnspecified = labeledSumWhere(usersByGender, label => ["not specified", "gender not specified"].includes(label.trim().toLowerCase()));
   const tu = Math.max(0, totalUsers);
   return {
     cityUnspecified,
@@ -153,7 +153,7 @@ export function communityHealthScorePlaceholder(input: {
 }
 
 export function periodLabel(period: import("@/lib/analytics-dashboard-mock").TimePeriod): string {
-  if (period === 1) return "Last 1 day (UTC window)";
+  if (period === 1) return "Today (Saudi time)";
   if (period === 7) return "Last 7 days (weekly)";
   if (period === 30) return "Last 30 days (monthly)";
   if (period === 365) return "Last 365 days (yearly)";
@@ -162,16 +162,16 @@ export function periodLabel(period: import("@/lib/analytics-dashboard-mock").Tim
 
 /** Chart x-axis bucket description for period analytics panels. */
 export function periodChartBucketHint(period: import("@/lib/analytics-dashboard-mock").TimePeriod): string {
-  if (period === 1) return "Hourly buckets (UTC today)";
+  if (period === 1) return "Today’s calendar-date bucket (Saudi time)";
   if (period === 7) return "Signups & workouts per day (7 days)";
   if (period === 30) return "Signups & workouts per day (30 days)";
-  if (period === 365) return "Signups & workouts per month (12 months)";
+  if (period === 365) return "Monthly buckets over the last 365 calendar dates";
   return "Period buckets";
 }
 
 export function hubWindowLabel(period: 0 | 1 | 7 | 30 | 365): string {
   if (period === 0) return "All time";
-  if (period === 1) return "Last 1 day (UTC)";
+  if (period === 1) return "Today (Saudi time)";
   if (period === 7) return "Weekly (7 days)";
   if (period === 30) return "Monthly (30 days)";
   return "Yearly (365 days)";

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { fetchGrowthDashboard } from "@/lib/growth-dashboard";
 import { createClient } from "@/lib/supabase";
 
 type DashboardStats = {
@@ -57,40 +58,26 @@ export default function DashboardPage() {
 
     setError("");
     try {
-      const [
-        usersRes,
-        signupsRes,
-        signups7Res,
-        premiumRes,
-        premiumTodayRes,
-        workoutsRes,
-        pendingRes,
-        bugsRes,
-        errorsRes,
-      ] = await Promise.all([
-        supabase.rpc("get_admin_user_count"),
-        supabase.rpc("get_admin_signups_today"),
-        supabase.rpc("get_admin_signups_last_n_days", { p_days: 7 }),
-        supabase.rpc("get_admin_premium_count"),
-        supabase.rpc("get_admin_premium_upgrades_today"),
-        supabase.rpc("get_admin_workouts_today"),
+      const [today, week, all, pendingRes, bugsRes, errorsRes] = await Promise.all([
+        fetchGrowthDashboard(supabase, 1), fetchGrowthDashboard(supabase, 7), fetchGrowthDashboard(supabase, "all"),
         supabase.rpc("get_admin_pending_reports_count"),
         supabase.rpc("get_admin_pending_bug_reports_count"),
         supabase.rpc("get_admin_unresolved_errors_count"),
       ]);
-
-      if (usersRes.error) setError(usersRes.error.message);
+      if ([today, week, all].some(r => r.source === "empty")) setError("Some measurements are unavailable; no estimates are substituted.");
+      const metric = (r: typeof today, key: "totalUsers" | "newSignUps" | "workoutsLogged" | "newPremiumSubscribers") =>
+        r.payload.unavailable?.includes(key) ? null : r.payload[key];
 
       const pendingRows = pendingRes.data as { post_count?: number; message_count?: number }[] | null;
       const pendingRow = Array.isArray(pendingRows) ? pendingRows[0] : null;
 
       setStats({
-        userCount: toInt(usersRes.data),
-        signupsToday: signupsRes.error ? null : toInt(signupsRes.data),
-        signups7d: signups7Res.error ? null : toInt(signups7Res.data),
-        premiumCount: premiumRes.error ? null : toInt(premiumRes.data),
-        premiumUpgradesToday: premiumTodayRes.error ? null : toInt(premiumTodayRes.data),
-        workoutsToday: workoutsRes.error ? null : toInt(workoutsRes.data),
+        userCount: metric(all, "totalUsers"),
+        signupsToday: metric(today, "newSignUps"),
+        signups7d: metric(week, "newSignUps"),
+        premiumCount: all.premiumAccounts ?? null,
+        premiumUpgradesToday: metric(today, "newPremiumSubscribers"),
+        workoutsToday: metric(today, "workoutsLogged"),
         pendingPostReports: toInt(pendingRow?.post_count),
         pendingMessageReports: toInt(pendingRow?.message_count),
         pendingBugReports: bugsRes.error ? 0 : toInt(bugsRes.data),
@@ -157,12 +144,13 @@ export default function DashboardPage() {
         <p className="text-red-600 dark:text-red-400 mb-4 text-sm">{error}</p>
       )}
 
+      <p className="mb-4 text-sm text-zinc-500">Asia/Riyadh · Today starts at midnight; 7 days includes today. Test and designated QA accounts excluded. Premium accounts reflects stored access, not verified subscription starts.</p>
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">
         <StatCard title="Total Users" value={stats.userCount} icon="👥" />
         <StatCard title="Signups Today" value={stats.signupsToday} icon="📈" accent />
         <StatCard title="Signups (7d)" value={stats.signups7d} icon="📊" />
-        <StatCard title="Premium" value={stats.premiumCount} icon="⭐" accent />
+        <StatCard title="Premium accounts" value={stats.premiumCount} icon="⭐" accent />
         <StatCard title="New Premium Today" value={stats.premiumUpgradesToday} icon="✨" accent />
         <StatCard title="Workouts Today" value={stats.workoutsToday} icon="🏋️" />
       </div>
@@ -246,7 +234,7 @@ function StatCard({
             accent ? "text-red-700 dark:text-red-400" : "text-zinc-900 dark:text-white"
           }`}
         >
-          {value ?? "—"}
+          {value ?? "Unavailable"}
         </span>
       </div>
       <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{title}</p>

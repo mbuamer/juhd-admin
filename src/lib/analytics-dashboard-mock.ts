@@ -30,6 +30,8 @@ export interface PlatformActivitySnapshot {
  */
 export interface GrowthDashboardPayload {
   periodDays: TimePeriod;
+  /** Missing measurements must never render as zero. */
+  unavailable?: string[];
   totalUsers: number;
   newSignUps: number;
   /** Users with ≥1 meaningful action in period (workout, routine, post/comment, message, check-in, feed) */

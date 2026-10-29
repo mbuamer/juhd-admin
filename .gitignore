@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local-only banner upload fixtures
+/.runtime/
+
+/.next-admin-qa/

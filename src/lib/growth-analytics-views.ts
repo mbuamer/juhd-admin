@@ -123,12 +123,11 @@ export function buildGrowthAnalyticsViews(input: {
   const today = input.growthToday.payload;
   const all = input.growthAll.payload;
   const { numeric, ops } = input;
-  const todaySource = input.growthToday.source;
 
   const dauToday = today.platformActivity.dau;
   const daily: DailySnapshot = {
-    activeUsers: dauToday > 0 ? dauToday : today.activeUsers,
-    activeUsersEstimated: todaySource !== "live" && dauToday <= 0,
+    activeUsers: dauToday,
+    activeUsersEstimated: false,
     signups: today.newSignUps,
     workouts: today.workoutsLogged,
     posts: numeric.content?.postsToday ?? null,
@@ -147,7 +146,7 @@ export function buildGrowthAnalyticsViews(input: {
 
   const allTime: AllTimeSnapshot = {
     totalUsers: all.totalUsers,
-    totalWorkouts: Math.max(all.workoutsLogged, all.platformActivity.totalWorkouts),
+    totalWorkouts: all.workoutsLogged,
     totalRoutines: all.newRoutinesCreated,
     totalPosts: numeric.content?.postsTotal ?? null,
     totalPremium: numeric.premiumSubscribers,

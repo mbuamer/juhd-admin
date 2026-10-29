@@ -11,12 +11,6 @@ export function bucketSeriesSum(series: LabeledCount[]): number {
   return series.reduce((a, b) => a + b.value, 0);
 }
 
-function chartBuckets(series: LabeledCount[], signups: LabeledCount[]): LabeledCount[] {
-  if (!series.length) return [];
-  if (signups.length > 0 && isMirroredSignupBuckets(series, signups)) return [];
-  return series;
-}
-
 function topN(series: LabeledCount[], n = 10): LabeledCount[] {
   return [...series]
     .filter((r) => r.value > 0)
@@ -42,9 +36,9 @@ function mergeCityEngagement(hub: AnalyticsHubExtras): LabeledCount[] {
 }
 
 function bucketCaption(period: PeriodFilterDays): string {
-  if (period === 7) return "Daily counts (UTC week)";
-  if (period === 30) return "Daily counts (last 30 days)";
-  return "Monthly counts (last 12 months)";
+  if (period === 7) return "Daily counts (last 7 Saudi calendar dates)";
+  if (period === 30) return "Daily counts (last 30 Saudi calendar dates)";
+  return "Monthly counts (last 365 Saudi calendar dates)";
 }
 
 /** RPC often copies signup buckets into routines/premium — don't chart that. */
@@ -122,11 +116,11 @@ export function buildChartsHubView(
   return {
     period,
     bucketCaption: bucketCaption(period),
-    signupsSeries: chartBuckets(periodPayload.signUpsOverTime, []),
+    signupsSeries: periodPayload.signUpsOverTime,
     /** Workouts are never signup-mirror filtered (only routines/premium were copied from signups in old SQL). */
     workoutsSeries: periodPayload.workoutsOverTime,
-    routinesSeries: chartBuckets(periodPayload.routinesBuckets, periodPayload.signUpsOverTime),
-    premiumSeries: chartBuckets(periodPayload.premiumBuckets, periodPayload.signUpsOverTime),
+    routinesSeries: periodPayload.routinesBuckets,
+    premiumSeries: periodPayload.premiumBuckets,
     totals: {
       signups: periodPayload.newSignUps,
       workouts: periodPayload.workoutsLogged,

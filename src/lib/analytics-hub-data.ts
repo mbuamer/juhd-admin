@@ -10,7 +10,7 @@ import {
   safeDivide,
 } from "@/lib/growth-analytics-math";
 
-export type HubTabId = "overview" | "period" | "charts" | "tables" | "alltime" | "ratios" | "targeting";
+export type HubTabId = "push" | "retention" | "overview" | "period" | "charts" | "tables" | "alltime" | "ratios" | "targeting";
 
 export interface HubMetric {
   id: string;
@@ -49,7 +49,7 @@ export interface AnalyticsHubData {
   topUsers: { username: string; count: number }[];
   topGyms: { gymName: string; checkinCount: number }[];
   allTime: HubMetric[];
-  allTimeHero: { totalUsers: number };
+  allTimeHero: { totalUsers: number | null };
   demographics: {
     usersByCity: LabeledCount[];
     usersByGender: LabeledCount[];
@@ -67,7 +67,7 @@ export interface AnalyticsHubData {
   };
 }
 
-const NA = "Not available yet";
+const NA = "Unavailable";
 
 const TABLE_DEFS: { id: string; title: string; metric: BreakdownMetric; dim: "city" | "gender" }[] = [
   { id: "workouts-city", title: "Workouts per city", metric: "workouts", dim: "city" },
@@ -114,6 +114,8 @@ function pct(n: number, d: number): string {
   if (!Number.isFinite(n) || !Number.isFinite(d) || d <= 0) return NA;
   return `${((n / d) * 100).toFixed(1)}%`;
 }
+
+function ratioFixed(n:number,d:number):string { return d>0 ? (n/d).toFixed(2) : NA; }
 
 function ratioPct(n: number, d: number): string {
   const v = safeDivide(n, d) * 100;
@@ -189,7 +191,7 @@ export function buildAnalyticsHubData(
       id: "active",
       label: "Active users today",
       value: daily.activeUsers,
-      sub: daily.activeUsersEstimated ? "Estimated" : "DAU · UTC today",
+      sub: daily.activeUsersEstimated ? "Estimated" : "DAU · Saudi today",
     },
     { id: "premium", label: "New premium today", value: daily.newPremium },
     {
@@ -228,7 +230,7 @@ export function buildAnalyticsHubData(
       label: "New posts",
       value: periodContent?.posts ?? null,
       sub:
-        period === 7 ? "~calendar week" : period === 30 ? "~calendar month" : period === 365 ? "~year proxy (month cols)" : "UTC day",
+        period === 7 ? "Last 7 Saudi calendar dates" : period === 30 ? "Last 30 Saudi calendar dates" : period === 365 ? "Last 365 Saudi calendar dates" : "Today · Saudi time",
       unavailable: !periodContent,
     },
     {
@@ -342,7 +344,7 @@ export function buildAnalyticsHubData(
     },
     {
       id: "routines-rate",
-      label: "Routine creation rate",
+      label: "Routines per new signup (not conversion)",
       value: ratioPct(periodP.newRoutinesCreated, periodP.newSignUps),
       formula: "New routines ÷ signups (period)",
     },
@@ -354,13 +356,13 @@ export function buildAnalyticsHubData(
     },
     {
       id: "signup-workout",
-      label: "Signup-to-workout rate",
+      label: "Workouts per new signup (not conversion)",
       value: ratioPct(periodP.workoutsLogged, periodP.newSignUps),
       formula: "Workouts ÷ signups (period)",
     },
     {
       id: "signup-post",
-      label: "Signup-to-post rate",
+      label: "Posts per new signup (not conversion)",
       value:
         periodContent && periodP.newSignUps > 0
           ? ratioPct(periodContent.posts, periodP.newSignUps)
@@ -402,8 +404,8 @@ export function buildAnalyticsHubData(
     },
     {
       id: "engagement",
-      label: "Engagement rate",
-      value: ratioPct(
+      label: "Content actions per observed active user",
+      value: ratioFixed(
         (periodContent?.posts ?? 0) + (periodContent?.comments ?? 0) + (periodContent?.likes ?? 0),
         periodP.activeUsers
       ),
@@ -424,8 +426,31 @@ export function buildAnalyticsHubData(
     { id: "premium", label: "Total premium subscribers", value: allTime.totalPremium, unavailable: allTime.totalPremium == null },
     { id: "friends", label: "Total friendships", value: allTime.totalFriendships, unavailable: allTime.totalFriendships == null },
     { id: "bugs", label: "Pending bug reports", value: ops.pendingBugReports, unavailable: ops.pendingBugReports == null },
-    { id: "reports", label: "Pending post reports", value: ops.pendingPostReports },
+    { id: "reports", label: "Pending post reports", value: ops.pendingPostReports, unavailable: ops.pendingPostReports == null },
   ];
+
+  // Primary measurements only come from the versioned endpoint. Missing data stays missing.
+  function guardMetrics(rows: HubMetric[], result: GrowthAnalyticsPageBundle["growthToday"]) {
+    const keys: Record<string,string> = {signups:"newSignUps",workouts:"workoutsLogged",routines:"newRoutinesCreated",active:"activeUsers",premium:"newPremiumSubscribers","avg-signups":"newSignUps","avg-workouts":"workoutsLogged"};
+    for (const row of rows) {
+      const key = keys[row.id];
+      if (key && (result.source === "empty" || result.payload.unavailable?.includes(key))) {
+        row.value = null; row.unavailable = true;
+      }
+      if (row.id === "active") row.sub = "Observed foreground users · Asia/Riyadh";
+    }
+  }
+  guardMetrics(overview, bundle.growthToday);
+  guardMetrics(periodMetrics, bundle.growthPeriod);
+  guardMetrics(allTimeMetrics, bundle.growthAll);
+  // Premium stock is explicitly labelled; upgrade counts never use role-change proxies.
+  const premiumStock = allTimeMetrics.find(r => r.id === "premium");
+  if (premiumStock) { premiumStock.label = "Premium accounts"; premiumStock.value = bundle.growthAll.premiumAccounts ?? null; premiumStock.unavailable = premiumStock.value == null; }
+  for (const ratio of ratios) {
+    if (bundle.growthPeriod.source === "empty" || bundle.growthAll.source === "empty" ||
+        (ratio.id.includes("active") || ratio.id === "engagement") && periodP.unavailable?.includes("activeUsers") ||
+        ratio.id.includes("premium")) { ratio.value = "Unavailable"; ratio.unavailable = true; }
+  }
 
   return {
     overview,
@@ -435,7 +460,7 @@ export function buildAnalyticsHubData(
     topUsers: tablesView.topUsers,
     topGyms: tablesView.topGyms.length ? tablesView.topGyms : gym?.topGyms ?? [],
     allTime: allTimeMetrics,
-    allTimeHero: { totalUsers: all.totalUsers },
+    allTimeHero: { totalUsers: bundle.growthAll.source === "empty" ? null : all.totalUsers },
     demographics: {
       usersByCity: all.usersByCity,
       usersByGender: all.usersByGender,
@@ -455,7 +480,7 @@ export function buildAnalyticsHubData(
 }
 
 export function displayMetricValue(m: HubMetric): string {
-  if (m.unavailable && (m.value == null || m.value === "")) return NA;
+  if (m.unavailable) return "Unavailable";
   if (typeof m.value === "number") return fmt(m.value);
   if (m.value == null) return NA;
   return String(m.value);

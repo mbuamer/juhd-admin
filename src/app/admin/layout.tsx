@@ -18,26 +18,38 @@ export default function AdminLayout({
 
   useEffect(() => {
     if (isLogin) {
-      setChecked(true);
+      setChecked(false);
       return;
     }
+    let cancelled = false;
+    setChecked(false);
     async function check() {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
       if (!session) {
         router.replace("/admin/login");
         return;
       }
       const { data } = await supabase.from("users").select("role").eq("id", session.user.id).single();
+      if (cancelled) return;
       if (data?.role?.toLowerCase() !== "admin") {
         router.replace("/admin/login");
+        return;
       }
       setChecked(true);
     }
-    check();
+    void check().catch(() => {
+      if (!cancelled) {
+        setChecked(false);
+        router.replace("/admin/login");
+      }
+    });
+    return () => { cancelled = true; };
   }, [isLogin, router]);
 
   async function handleLogout() {
+    setChecked(false);
     const supabase = createClient();
     await supabase.auth.signOut();
     router.replace("/admin/login");
@@ -75,6 +87,7 @@ export default function AdminLayout({
           <NavLink href="/admin/users" icon="👥" label="Users" active={pathname === "/admin/users"} />
           <NavLink href="/admin/analytics" icon="📈" label="Analytics" active={pathname === "/admin/analytics"} />
           <NavLink href="/admin/insights" icon="📋" label="Insights" active={pathname === "/admin/insights"} />
+          {process.env.NEXT_PUBLIC_RELEASE_CONTROLS_ENABLED === "1" && <NavLink href="/admin/releases" icon="📣" label="Updates & banners" active={pathname === "/admin/releases"} />}
           <NavLink href="/admin/notifications" icon="📢" label="Notifications" active={pathname === "/admin/notifications"} />
           <NavLink href="/admin/reports" icon="🚩" label="Reports" active={pathname === "/admin/reports"} />
           <NavLink href="/admin/bug-reports" icon="🐛" label="Bug Reports" active={pathname === "/admin/bug-reports"} />

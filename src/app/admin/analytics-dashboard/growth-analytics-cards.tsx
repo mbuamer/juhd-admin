@@ -348,7 +348,7 @@ export function FunnelStep({
 export function AllTimeHeroCard({
   label,
   value,
-  subtitle = "All-time · since launch",
+  subtitle = "All-time · retained records",
 }: {
   label: string;
   value: string | number;

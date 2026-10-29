@@ -7,8 +7,6 @@ import type { PeriodFilterDays } from "@/lib/growth-analytics-views";
 import {
   buildChartsHubView,
   bucketSeriesSum,
-  hasRealBucketVariance,
-  isMirroredSignupBuckets,
 } from "@/lib/charts-hub-data";
 import { fetchChartsInsights } from "@/lib/analytics-hub-rpc";
 import { SimpleBucketList } from "./SimpleBucketList";
@@ -31,14 +29,14 @@ function TrendPanel({
 }: {
   title: string;
   subtitle: string;
-  total: number;
+  total: number | null;
   rows: { label: string; value: number }[];
   color: string;
   mirrorNote?: string;
   bucketSum?: number;
 }) {
   const sumMismatch =
-    bucketSum != null && rows.length > 0 && Math.abs(bucketSum - total) > 1;
+    bucketSum != null && rows.length > 0 && total != null && Math.abs(bucketSum - total) > 1;
   return (
     <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
       <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
@@ -46,11 +44,11 @@ function TrendPanel({
           <h3 className="text-sm font-semibold text-white">{title}</h3>
           <p className="text-xs text-zinc-500">{subtitle}</p>
         </div>
-        <p className="text-2xl font-semibold tabular-nums text-white">{total.toLocaleString()}</p>
+        <p className="text-2xl font-semibold tabular-nums text-white">{total?.toLocaleString() ?? "Unavailable"}</p>
       </div>
       {sumMismatch ? (
         <p className="mb-3 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2 text-xs text-sky-200/90">
-          Chart buckets sum to {bucketSum!.toLocaleString()} (headline {total.toLocaleString()}). Re-run{" "}
+          Chart buckets sum to {bucketSum!.toLocaleString()} (headline {total?.toLocaleString() ?? "Unavailable"}). Re-run{" "}
           <code className="text-[10px]">admin_growth_dashboard_exclude_test.sql</code> if buckets look wrong.
         </p>
       ) : null}
@@ -116,16 +114,15 @@ export function ChartsHubSection({
     [bundle, period, insights]
   );
 
-  const routinesMirrored = isMirroredSignupBuckets(view.routinesSeries, view.signupsSeries);
-  const premiumMirrored = isMirroredSignupBuckets(view.premiumSeries, view.signupsSeries);
   const busy = Boolean(periodLoading || insightsLoading);
 
+  if (bundle.growthPeriod.source === "empty") return <EmptyStatePanel title="Unavailable" body="Measured reporting could not be loaded. No chart estimates are shown." />;
   return (
     <section>
       <SectionHeader
         kicker="Trends"
         title="Charts"
-        hint="Simple daily/monthly counts. Excludes role=test."
+        hint="Measured daily/monthly counts · Asia/Riyadh · QA accounts excluded."
       />
       <PeriodFilterBar
         period={period}
@@ -147,7 +144,7 @@ export function ChartsHubSection({
             <MetricCard label="Signups" value={view.totals.signups.toLocaleString()} />
             <MetricCard label="Workouts" value={view.totals.workouts.toLocaleString()} />
             <MetricCard label="New routines" value={view.totals.routines.toLocaleString()} />
-            <MetricCard label="New premium" value={view.totals.premium.toLocaleString()} />
+            <MetricCard label="New premium" value="Unavailable" />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -179,29 +176,15 @@ export function ChartsHubSection({
               rows={view.routinesSeries}
               color="#f59e0b"
               bucketSum={bucketSeriesSum(view.routinesSeries)}
-              mirrorNote={
-                routinesMirrored
-                  ? "Routine buckets matched signup shape (stale SQL). Re-run admin_growth_dashboard_exclude_test.sql."
-                  : view.routinesSeries.length === 0 && view.totals.routines > 0
-                    ? `Total: ${view.totals.routines.toLocaleString()} new routines — per-day buckets could not be loaded (check admin RLS on routines).`
-                    : !hasRealBucketVariance(view.routinesSeries) && view.routinesSeries.length > 0
-                      ? "Bucket values look synthetic (all equal). Re-run admin_growth_dashboard_exclude_test.sql."
-                      : undefined
-              }
+
             />
             <TrendPanel
               title="New premium"
               subtitle="Upgrades in period"
-              total={view.totals.premium}
+              total={null}
               rows={view.premiumSeries}
               color="#a855f7"
-              mirrorNote={
-                premiumMirrored || !hasRealBucketVariance(view.premiumSeries)
-                  ? view.totals.premium === 0
-                    ? "No premium upgrades in this period."
-                    : `Total: ${view.totals.premium.toLocaleString()} upgrades. Per-day chart needs premium bucket data from SQL.`
-                  : undefined
-              }
+              mirrorNote="Verified subscription starts unavailable pending ledger validation."
             />
           </div>
 
@@ -240,11 +223,11 @@ export function ChartsHubSection({
 
           <div className="mt-10">
             <SectionHeader kicker="Goals" title="Goal & fitness insights" />
-            <AnalyticsTable title="Goals selected" rows={view.goals} emptyMessage="Run admin_charts_insights_rpc.sql" />
+            <AnalyticsTable title="Goals selected" rows={view.goals} emptyMessage="Unavailable — goal-definition audit pending." />
           </div>
 
           <div className="mt-10">
-            <SectionHeader kicker="Social" title="Social engagement" />
+            <SectionHeader kicker="Social" title="Social engagement" hint="Activity buckets count unique users in Saudi time. A user can appear in several buckets; totals are not additive." />
             <div className="mb-4 grid max-w-lg grid-cols-2 gap-3">
               <MetricCard
                 label="Avg comments / post"
@@ -257,14 +240,14 @@ export function ChartsHubSection({
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {view.activeHour.length > 0 ? (
-                <SimpleBucketList rows={view.activeHour} color="#38bdf8" emptyMessage="No events" />
+                <SimpleBucketList additive={false} rows={view.activeHour} color="#38bdf8" emptyMessage="No events" />
               ) : (
-                <EmptyStatePanel title="Active hour" body="Run admin_charts_insights_rpc.sql" />
+                <EmptyStatePanel title="Active hour" body="No qualifying foreground activity available." />
               )}
               {view.activeWeekday.length > 0 ? (
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
                   <h3 className="mb-3 text-sm font-semibold text-white">Busiest weekdays</h3>
-                  <SimpleBucketList rows={view.activeWeekday} color="#818cf8" />
+                  <SimpleBucketList additive={false} rows={view.activeWeekday} color="#818cf8" />
                 </div>
               ) : (
                 <EmptyStatePanel title="Active weekday" body="No weekday data." />

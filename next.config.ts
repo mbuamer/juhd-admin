@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  distDir: process.env.JUHD_LOCAL_ADMIN_QA === "1" ? ".next-admin-qa" : ".next",
 };
 
 export default nextConfig;

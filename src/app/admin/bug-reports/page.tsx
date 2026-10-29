@@ -1,5 +1,7 @@
 "use client";
 
+import SupportInbox from "./SupportInbox";
+
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 
@@ -16,6 +18,10 @@ type BugReport = {
 };
 
 export default function BugReportsPage() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  return url === "http://127.0.0.1:54321" ? <SupportInbox /> : <LegacyBugReportsPage />;
+}
+function LegacyBugReportsPage() {
   const [reports, setReports] = useState<BugReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

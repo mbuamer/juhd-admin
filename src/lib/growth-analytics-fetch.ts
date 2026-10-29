@@ -35,8 +35,8 @@ function toInt(v: unknown): number {
 export interface OpsPulse {
   unresolvedErrors: number | null;
   pendingBugReports: number | null;
-  pendingPostReports: number;
-  pendingMessageReports: number;
+  pendingPostReports: number | null;
+  pendingMessageReports: number | null;
 }
 
 export interface GrowthAnalyticsPageBundle {
@@ -84,7 +84,7 @@ export async function fetchGrowthAnalyticsPageData(
   supabase: SupabaseClient,
   period: PeriodFilterDays
 ): Promise<GrowthAnalyticsPageBundle> {
-  const [growthPeriod, growthToday, growthAll, numeric, hub, targetingHub, errorsRes, bugsRes, pendingRes] =
+  const [growthPeriod, growthToday, growthAll, numeric, hub, targetingHub, errorsRes, pendingRes] =
     await Promise.all([
       fetchGrowthDashboard(supabase, period),
       fetchGrowthDashboard(supabase, 1),
@@ -93,7 +93,6 @@ export async function fetchGrowthAnalyticsPageData(
       fetchAnalyticsHubExtras(supabase, period),
       fetchAnalyticsHubExtras(supabase, 0),
       supabase.rpc("get_admin_unresolved_errors_count"),
-      supabase.rpc("get_admin_pending_bug_reports_count"),
       supabase.rpc("get_admin_pending_reports_count"),
     ]);
 
@@ -102,9 +101,9 @@ export async function fetchGrowthAnalyticsPageData(
 
   const ops: OpsPulse = {
     unresolvedErrors: errorsRes.error ? null : toInt(errorsRes.data),
-    pendingBugReports: bugsRes.error ? null : toInt(bugsRes.data),
-    pendingPostReports: toInt(pendingRow?.post_count),
-    pendingMessageReports: toInt(pendingRow?.message_count),
+    pendingBugReports: targetingHub.reportsPeriod?.pendingBugReports ?? null,
+    pendingPostReports: targetingHub.reportsPeriod?.pendingPostReports ?? null,
+    pendingMessageReports: pendingRes.error || pendingRow?.message_count == null ? null : toInt(pendingRow.message_count),
   };
 
   const views = buildGrowthAnalyticsViews({ growthToday, growthAll, numeric, ops });

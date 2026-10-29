@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchGrowthDashboard } from "@/lib/growth-dashboard";
 import { createClient } from "@/lib/supabase";
 
 type EventRow = { event_name: string; event_count: number };
@@ -50,28 +51,22 @@ export default function AnalyticsPage() {
       const start = new Date();
       start.setDate(start.getDate() - period);
 
-      const [usersRes, signupsTodayRes, signups7Res, signups30Res, premiumRes, eventsRes] = await Promise.all([
-        supabase.rpc("get_admin_user_count"),
-        supabase.rpc("get_admin_signups_today"),
-        supabase.rpc("get_admin_signups_last_n_days", { p_days: 7 }),
-        supabase.rpc("get_admin_signups_last_n_days", { p_days: 30 }),
-        supabase.rpc("get_admin_premium_count"),
-        supabase.rpc("get_event_counts", {
-          p_start_date: start.toISOString(),
-          p_end_date: end.toISOString(),
-        }),
+      const [all, today, week, month, eventsRes] = await Promise.all([
+        fetchGrowthDashboard(supabase,"all"), fetchGrowthDashboard(supabase,1),
+        fetchGrowthDashboard(supabase,7), fetchGrowthDashboard(supabase,30),
+        supabase.rpc("get_event_counts", {p_start_date:start.toISOString(),p_end_date:end.toISOString()}),
       ]);
-
-      setUserCount(toInt(usersRes.data));
-      setSignupsToday(signupsTodayRes.error ? null : toInt(signupsTodayRes.data));
-      setSignups7d(signups7Res.error ? null : toInt(signups7Res.data));
-      setSignups30d(signups30Res.error ? null : toInt(signups30Res.data));
-      setPremiumCount(premiumRes.error ? null : toInt(premiumRes.data));
+      setUserCount(all.source === "live" ? all.payload.totalUsers : null);
+      setSignupsToday(today.source === "live" ? today.payload.newSignUps : null);
+      setSignups7d(week.source === "live" ? week.payload.newSignUps : null);
+      setSignups30d(month.source === "live" ? month.payload.newSignUps : null);
+      setPremiumCount(all.premiumAccounts ?? null);
 
       if (eventsRes.error) throw eventsRes.error;
       const rows = (eventsRes.data as { event_name: string; event_count: number }[]) ?? [];
       setEvents(rows.map((r) => ({ event_name: r.event_name, event_count: Number(r.event_count) })));
     } catch (e) {
+      setEvents([]);
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
       setLoading(false);
@@ -81,12 +76,6 @@ export default function AnalyticsPage() {
   useEffect(() => {
     load();
   }, [period]);
-
-  function toInt(val: unknown): number {
-    if (typeof val === "number") return val;
-    if (typeof val === "string") return parseInt(val, 10) || 0;
-    return Number(val) || 0;
-  }
 
   const eventGroups = groupEvents(events);
 
@@ -121,15 +110,16 @@ export default function AnalyticsPage() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <StatCard title="Total Users" value={userCount} />
-            <StatCard title="Premium" value={premiumCount} accent />
+            <StatCard title="Premium accounts" value={premiumCount} accent />
             <StatCard title="Signups Today" value={signupsToday} />
             <StatCard title={period === 7 ? "Signups (7d)" : "Signups (30d)"} value={period === 7 ? signups7d : signups30d} />
           </div>
 
-          <h2 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">Events</h2>
+          <h2 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200 mb-4">Recorded event rows (not active-user counts)</h2>
+          <p className="mb-4 text-sm text-zinc-500">Headline periods use Asia/Riyadh and exclude designated QA accounts. This legacy event diagnostic uses a rolling window and may contain duplicates or QA rows; it is not an engagement report.</p>
           {eventGroups.length === 0 ? (
             <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-12 text-center">
-              <p className="text-zinc-500 dark:text-zinc-400">No events recorded</p>
+              <p className="text-zinc-500 dark:text-zinc-400">{error ? "Unavailable" : "No events recorded"}</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -166,7 +156,7 @@ function StatCard({ title, value, accent }: { title: string; value: number | nul
     >
       <p className="text-sm text-zinc-500 dark:text-zinc-400">{title}</p>
       <p className={`text-2xl font-bold mt-1 ${accent ? "text-red-700 dark:text-red-400" : "text-zinc-900 dark:text-white"}`}>
-        {value ?? "—"}
+        {value ?? "Unavailable"}
       </p>
     </div>
   );

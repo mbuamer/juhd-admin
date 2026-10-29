@@ -14,6 +14,8 @@ import {
 } from "@/lib/analytics-hub-data";
 import { fetchAnalyticsHubExtras, type HubWindowDays } from "@/lib/analytics-hub-rpc";
 import { hubWindowLabel, periodLabel } from "@/lib/growth-analytics-math";
+import { PushSection } from "./PushSection";
+import { RetentionSection } from "./RetentionSection";
 import { ChartsHubSection } from "./ChartsHubSection";
 import { TargetingSummaryCard, DebugPanel } from "./growth-analytics-cards";
 import {
@@ -128,13 +130,17 @@ export function AnalyticsHub({
           </div>
         </header>
 
+        <p className="mb-4 text-sm text-zinc-400">{bundle.growthPeriod.fetchNote} {bundle.growthPeriod.generatedAt ? `Updated ${new Date(bundle.growthPeriod.generatedAt).toLocaleString("en-GB", {timeZone:"Asia/Riyadh"})} (Asia/Riyadh)` : ""}</p>
+        <p className="mb-4 rounded-lg border border-amber-500/30 p-3 text-sm text-amber-200">Local rollout review: growth, content, gym and report analytics use Saudi calendar periods and QA exclusions. Verified subscription starts, deletion history and goals remain unavailable pending their audits. Operational error and message-report queues remain separate support inventories.</p>
         <div className="mb-8">
           <AnalyticsTabs active={tab} onChange={setTab} />
         </div>
 
+        {tab === "push" && <PushSection refreshCount={refreshCount} />}
+        {tab === "retention" && <RetentionSection refreshCount={refreshCount} />}
         {tab === "overview" && (
           <section>
-            <SectionHeader kicker="Daily" title="Overview" hint="Today only (UTC). No period filter here." />
+            <SectionHeader kicker="Daily" title="Overview" hint="Today only · Asia/Riyadh. Historical activity is observed, not complete coverage." />
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {hub.overview.map((m) => (
                 <MetricCard key={m.id} label={m.label} value={displayMetricValue(m)} sub={m.sub} />
@@ -173,7 +179,7 @@ export function AnalyticsHub({
                 </div>
                 <div className="mt-8">
                   <ChartPanel title="Growth & activity" subtitle={`Sign-ups and workouts per bucket · ${periodHint}`}>
-                    {chartJsReady ? (
+                    {bundle.growthPeriod.source === "empty" ? <EmptyStatePanel title="Unavailable" body="Measured chart data could not be loaded." /> : chartJsReady ? (
                       <Line data={growthActivityChartData(periodPayload)} options={hubLineOptions} />
                     ) : (
                       <ChartPlaceholder />
@@ -227,9 +233,9 @@ export function AnalyticsHub({
 
         {tab === "alltime" && (
           <section>
-            <SectionHeader kicker="Lifetime" title="All-Time" hint="Totals since launch. No period filter." />
+            <SectionHeader kicker="Lifetime" title="All-Time" hint="Totals from retained records. No period filter." />
             <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <HeroMetricCard label="Total users" value={hub.allTimeHero.totalUsers.toLocaleString()} />
+              <HeroMetricCard label="Total users" value={hub.allTimeHero.totalUsers?.toLocaleString() ?? "Unavailable"} />
               {hub.allTime.map((m) => (
                 <MetricCard key={m.id} label={m.label} value={displayMetricValue(m)} />
               ))}
