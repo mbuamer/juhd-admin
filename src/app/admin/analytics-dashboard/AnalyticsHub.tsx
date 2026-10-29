@@ -14,6 +14,8 @@ import {
 } from "@/lib/analytics-hub-data";
 import { fetchAnalyticsHubExtras, type HubWindowDays } from "@/lib/analytics-hub-rpc";
 import { hubWindowLabel, periodLabel } from "@/lib/growth-analytics-math";
+import { PushSection } from "./PushSection";
+import { RetentionSection } from "./RetentionSection";
 import { ChartsHubSection } from "./ChartsHubSection";
 import { TargetingSummaryCard, DebugPanel } from "./growth-analytics-cards";
 import {
@@ -132,6 +134,8 @@ export function AnalyticsHub({
           <AnalyticsTabs active={tab} onChange={setTab} />
         </div>
 
+        {tab === "push" && <PushSection refreshCount={refreshCount} />}
+        {tab === "retention" && <RetentionSection refreshCount={refreshCount} />}
         {tab === "overview" && (
           <section>
             <SectionHeader kicker="Daily" title="Overview" hint="Today only (UTC). No period filter here." />

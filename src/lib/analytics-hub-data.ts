@@ -10,7 +10,7 @@ import {
   safeDivide,
 } from "@/lib/growth-analytics-math";
 
-export type HubTabId = "overview" | "period" | "charts" | "tables" | "alltime" | "ratios" | "targeting";
+export type HubTabId = "retention" | "push" | "overview" | "period" | "charts" | "tables" | "alltime" | "ratios" | "targeting";
 
 export interface HubMetric {
   id: string;

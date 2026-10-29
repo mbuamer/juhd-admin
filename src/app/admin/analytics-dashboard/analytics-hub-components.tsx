@@ -9,6 +9,8 @@ import { SectionHeader, EmptyStatePanel, ChartPanel } from "./growth-analytics-c
 
 const TABS: { id: HubTabId; label: string }[] = [
   { id: "overview", label: "Overview" },
+  { id: "retention", label: "Retention" },
+  { id: "push", label: "Push returns" },
   { id: "period", label: "Period Summary" },
   { id: "charts", label: "Charts" },
   { id: "tables", label: "Tables" },
