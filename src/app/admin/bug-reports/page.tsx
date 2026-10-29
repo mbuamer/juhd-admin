@@ -1,5 +1,7 @@
 "use client";
 
+import SupportInbox from "./SupportInbox";
+
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 
@@ -16,6 +18,10 @@ type BugReport = {
 };
 
 export default function BugReportsPage() {
+  const [legacy,setLegacy]=useState(false);
+  return <><div className="px-6 pt-5 flex gap-3"><button aria-pressed={!legacy} className="rounded-lg border px-4 py-2" onClick={()=>setLegacy(false)}>Conversations · المحادثات</button><button aria-pressed={legacy} className="rounded-lg border px-4 py-2" onClick={()=>setLegacy(true)}>Original reports · البلاغات الأصلية</button></div>{legacy?<LegacyBugReportsPage/>:<SupportInbox/>}</>;
+}
+function LegacyBugReportsPage() {
   const [reports, setReports] = useState<BugReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
