@@ -33,6 +33,18 @@ export function parseMeasuredRetention(raw:unknown,period:DetailPeriod):Measured
  }
  return r;
 }
+export type RetentionFailure = 'timeout'|'access'|'backend'|'contract'|'network';
+export async function fetchRetentionResult(client:SupabaseClient,period:DetailPeriod):Promise<{data:MeasuredRetention|null;failure:RetentionFailure|null}>{
+ try{
+  const {data,error}=await client.rpc('get_admin_retention_measured',{p_period_days:period}).abortSignal(AbortSignal.timeout(20000));
+  if(error){
+   const timeout=error.code==='57014'||/timeout|timed out|aborted/i.test(error.message??'');
+   return {data:null,failure:timeout?'timeout':error.code==='42501'||error.code==='PGRST301'?'access':'backend'};
+  }
+  const parsed=parseMeasuredRetention(data,period);
+  return {data:parsed,failure:parsed?null:'contract'};
+ }catch(e){return {data:null,failure:e instanceof Error&&['TimeoutError','AbortError'].includes(e.name)?'timeout':'network'};}
+}
 export async function fetchMeasuredRetention(client:SupabaseClient,period:DetailPeriod):Promise<MeasuredRetention|null>{
- try{const {data,error}=await client.rpc('get_admin_retention_measured',{p_period_days:period}).abortSignal(AbortSignal.timeout(20000));return error?null:parseMeasuredRetention(data,period);}catch{return null;}
+ return (await fetchRetentionResult(client,period)).data;
 }

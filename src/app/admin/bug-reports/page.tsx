@@ -18,8 +18,8 @@ type BugReport = {
 };
 
 export default function BugReportsPage() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return url === "http://127.0.0.1:54321" ? <SupportInbox /> : <LegacyBugReportsPage />;
+  const [legacy,setLegacy]=useState(false);
+  return <><div className="px-6 pt-5 flex gap-3"><button aria-pressed={!legacy} className="rounded-lg border px-4 py-2" onClick={()=>setLegacy(false)}>Conversations · المحادثات</button><button aria-pressed={legacy} className="rounded-lg border px-4 py-2" onClick={()=>setLegacy(true)}>Original reports · البلاغات الأصلية</button></div>{legacy?<LegacyBugReportsPage/>:<SupportInbox/>}</>;
 }
 function LegacyBugReportsPage() {
   const [reports, setReports] = useState<BugReport[]>([]);
