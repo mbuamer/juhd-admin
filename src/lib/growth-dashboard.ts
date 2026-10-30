@@ -61,6 +61,30 @@ export async function fetchGrowthDashboard(supabase: SupabaseClient, period: Tim
   for (const key of ["signUpsOverTime", "workoutsOverTime", "premiumBuckets", "routinesBuckets", "usersByCity", "usersByGender", "usersByAgeGroup"] as const) payload[key] = [];
   return { payload, source: "empty", fetchNote: "Unavailable: measured reporting endpoint is missing, failed, or returned invalid data. No estimated fallback is used." };
 }
+/** One seven-day snapshot supplies all headline totals; use server time at midnight boundaries. */
+export function growthHeadlines(result: GrowthDashboardResult) {
+  const p = result.payload;
+  const available = result.source === "live" && p.periodDays === 7;
+  const metric = (key: "totalUsers" | "newSignUps") =>
+    available && !p.unavailable?.includes(key) ? p[key] : null;
+  const generated = new Date(result.generatedAt ?? "");
+  let day: string | undefined;
+  if (Number.isFinite(generated.getTime())) {
+    const parts = new Intl.DateTimeFormat("en", { timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(generated);
+    const part = (name: string) => parts.find(p => p.type === name)?.value;
+    day = `${part("year")}-${part("month")}-${part("day")}`;
+  }
+  const daily = (rows: LabeledCount[]) => available && day ? rows.find(r => r.label === day)?.value ?? null : null;
+  return {
+    userCount: metric("totalUsers"),
+    signupsToday: daily(p.signUpsOverTime),
+    signups7d: metric("newSignUps"),
+    premiumCount: available ? result.premiumAccounts ?? null : null,
+    // Subscription starts are not inferred from current account roles.
+    premiumUpgradesToday: null,
+    workoutsToday: daily(p.workoutsOverTime),
+  };
+}
 export async function logGrowthDashboardView(supabase: SupabaseClient, meta: { period: TimePeriod; source: GrowthDataSource }) {
   try { await supabase.rpc("log_admin_audit", { p_action: "growth_dashboard_view", p_path: "/admin/analytics-dashboard", p_metadata: meta }); } catch { /* nonblocking */ }
 }

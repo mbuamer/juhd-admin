@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { fetchGrowthDashboard } from "@/lib/growth-dashboard";
+import { fetchGrowthDashboard, growthHeadlines } from "@/lib/growth-dashboard";
 import { createClient } from "@/lib/supabase";
 
 type DashboardStats = {
@@ -58,26 +58,19 @@ export default function DashboardPage() {
 
     setError("");
     try {
-      const [today, week, all, pendingRes, bugsRes, errorsRes] = await Promise.all([
-        fetchGrowthDashboard(supabase, 1), fetchGrowthDashboard(supabase, 7), fetchGrowthDashboard(supabase, "all"),
+      const [week, pendingRes, bugsRes, errorsRes] = await Promise.all([
+        fetchGrowthDashboard(supabase, 7),
         supabase.rpc("get_admin_pending_reports_count"),
         supabase.rpc("get_admin_pending_bug_reports_count"),
         supabase.rpc("get_admin_unresolved_errors_count"),
       ]);
-      if ([today, week, all].some(r => r.source === "empty")) setError("Some measurements are unavailable; no estimates are substituted.");
-      const metric = (r: typeof today, key: "totalUsers" | "newSignUps" | "workoutsLogged" | "newPremiumSubscribers") =>
-        r.payload.unavailable?.includes(key) ? null : r.payload[key];
+      if (week.source === "empty") setError("Some measurements are unavailable; no estimates are substituted.");
 
       const pendingRows = pendingRes.data as { post_count?: number; message_count?: number }[] | null;
       const pendingRow = Array.isArray(pendingRows) ? pendingRows[0] : null;
 
       setStats({
-        userCount: metric(all, "totalUsers"),
-        signupsToday: metric(today, "newSignUps"),
-        signups7d: metric(week, "newSignUps"),
-        premiumCount: all.premiumAccounts ?? null,
-        premiumUpgradesToday: metric(today, "newPremiumSubscribers"),
-        workoutsToday: metric(today, "workoutsLogged"),
+        ...growthHeadlines(week),
         pendingPostReports: toInt(pendingRow?.post_count),
         pendingMessageReports: toInt(pendingRow?.message_count),
         pendingBugReports: bugsRes.error ? 0 : toInt(bugsRes.data),
