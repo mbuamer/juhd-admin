@@ -1,3 +1,4 @@
+import { measuredRequest } from "@/lib/measured-request";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LabeledCount } from "@/lib/analytics-dashboard-mock";
 export type DetailPeriod = 0 | 1 | 7 | 30 | 365;
@@ -37,7 +38,7 @@ export function parseMeasuredDetails(raw:unknown,period:DetailPeriod):MeasuredDe
 }
 export async function fetchMeasuredDetails(client:SupabaseClient,period:DetailPeriod):Promise<MeasuredDetails|null> {
  try {
-  const {data,error}=await client.rpc("get_admin_details_measured",{p_period_days:period,p_timezone:"Asia/Riyadh"}).abortSignal(AbortSignal.timeout(20000));
+  const {data,error}=await measuredRequest(client, `details:${period}`, async () => await client.rpc("get_admin_details_measured",{p_period_days:period,p_timezone:"Asia/Riyadh"}).abortSignal(AbortSignal.timeout(20000)));
   return error ? null : parseMeasuredDetails(data,period);
  } catch { return null; }
 }

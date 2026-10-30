@@ -1,3 +1,4 @@
+import { measuredRequest } from "@/lib/measured-request";
 /** Only the versioned measured RPC may supply headline metrics. No legacy fallbacks. */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createEmptyGrowthDashboardPayload, type GrowthDashboardPayload, type LabeledCount, type TimePeriod } from "@/lib/analytics-dashboard-mock";
@@ -50,7 +51,7 @@ export function parseGrowthDashboardPayload(raw: unknown, period: TimePeriod): G
 }
 export async function fetchGrowthDashboard(supabase: SupabaseClient, period: TimePeriod): Promise<GrowthDashboardResult> {
   try {
-    const { data, error } = await supabase.rpc("get_admin_growth_measured", { p_period_days: growthRpcPeriodDays(period), p_timezone: "Asia/Riyadh" }).abortSignal(AbortSignal.timeout(20000));
+    const { data, error } = await measuredRequest(supabase, `growth:${growthRpcPeriodDays(period)}`, async () => await supabase.rpc("get_admin_growth_measured", { p_period_days: growthRpcPeriodDays(period), p_timezone: "Asia/Riyadh" }).abortSignal(AbortSignal.timeout(20000)));
     const payload = error ? null : parseGrowthDashboardPayload(data, period);
     if (payload) return { payload, source: "live", generatedAt: data.generatedAt,
       premiumAccounts: count(data.premiumAccounts) ? data.premiumAccounts : undefined,
