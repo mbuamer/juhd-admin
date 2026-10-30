@@ -1,0 +1,113 @@
+{
+  "cohorts": [
+    {
+      "date": "2026-10-18",
+      "milestones": [
+        {
+          "day": 1,
+          "percent": null,
+          "signups": 1,
+          "waiting": 1,
+          "eligible": 0,
+          "returned": 0,
+          "unobserved": 0
+        },
+        {
+          "day": 7,
+          "percent": null,
+          "signups": 1,
+          "waiting": 1,
+          "eligible": 0,
+          "returned": 0,
+          "unobserved": 0
+        },
+        {
+          "day": 30,
+          "percent": null,
+          "signups": 1,
+          "waiting": 1,
+          "eligible": 0,
+          "returned": 0,
+          "unobserved": 0
+        }
+      ]
+    },
+    {
+      "date": "2026-09-09",
+      "milestones": [
+        {
+          "day": 1,
+          "percent": 40.0,
+          "signups": 5,
+          "waiting": 0,
+          "eligible": 5,
+          "returned": 2,
+          "unobserved": 0
+        },
+        {
+          "day": 7,
+          "percent": 20.0,
+          "signups": 5,
+          "waiting": 0,
+          "eligible": 5,
+          "returned": 1,
+          "unobserved": 0
+        },
+        {
+          "day": 30,
+          "percent": 0.0,
+          "signups": 5,
+          "waiting": 0,
+          "eligible": 5,
+          "returned": 0,
+          "unobserved": 0
+        }
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "day": 1,
+      "percent": 40.0,
+      "signups": 6,
+      "waiting": 1,
+      "eligible": 5,
+      "returned": 2,
+      "unobserved": 0
+    },
+    {
+      "day": 7,
+      "percent": 20.0,
+      "signups": 6,
+      "waiting": 1,
+      "eligible": 5,
+      "returned": 1,
+      "unobserved": 0
+    },
+    {
+      "day": 30,
+      "percent": 0.0,
+      "signups": 6,
+      "waiting": 1,
+      "eligible": 5,
+      "returned": 0,
+      "unobserved": 0
+    }
+  ],
+  "coverage": [
+    {
+      "end": "2026-10-19",
+      "start": "2026-07-11"
+    },
+    {
+      "end": "2026-10-19",
+      "start": "2026-07-21"
+    }
+  ],
+  "timezone": "Asia/Riyadh",
+  "definition": "exact_calendar_day",
+  "periodDays": 0,
+  "cohortCount": 6,
+  "generatedAt": "2026-10-19T09:06:05.548902+00:00",
+  "contractVersion": 1
+}
